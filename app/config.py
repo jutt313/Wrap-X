@@ -28,6 +28,9 @@ class Settings(BaseSettings):
 
     # Frontend configuration
     frontend_base_url: str = "https://wrap-x.com"
+    
+    # Render API (optional, for MCP)
+    render_api: Optional[str] = None
 
     class Config:
         env_file = ".env"
