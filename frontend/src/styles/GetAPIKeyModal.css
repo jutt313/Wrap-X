@@ -1,0 +1,244 @@
+/* Get API Key Modal Styles - Using modal-card for full-screen */
+
+.api-key-modal-overlay {
+  /* Using modal-overlay from Modal.css */
+}
+
+.api-key-modal {
+  /* Using modal-card from Modal.css */
+}
+
+/* Warning Box */
+.api-key-warning-box {
+  display: flex;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: rgba(251, 191, 36, 0.1);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  border-radius: 8px;
+  margin-bottom: 1.5rem;
+}
+
+.api-key-warning-box svg {
+  color: #FBBF24;
+  flex-shrink: 0;
+  margin-top: 0.125rem;
+}
+
+.api-key-warning-box p {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+/* Table Styles - Matching Projects Modal */
+.api-keys-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.api-keys-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.api-keys-table th,
+.api-keys-table td {
+  padding: 0.65rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.92);
+  text-align: left;
+}
+
+.api-keys-table th {
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 0.875rem;
+}
+
+.api-keys-table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.secret-key-cell {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  letter-spacing: 0.5px;
+  color: rgba(147, 197, 253, 0.9);
+  cursor: default;
+}
+
+.secret-key-cell:hover {
+  color: #93c5fd;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  letter-spacing: 0.5px;
+}
+
+.empty {
+  padding: 2rem;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.875rem;
+}
+
+/* Create/Show Modal Overrides (smaller modals) */
+.api-key-create-modal,
+.api-key-show-modal {
+  width: 500px;
+  height: auto;
+  max-height: 90vh;
+}
+
+.api-key-create-modal .modal-body,
+.api-key-show-modal .modal-body {
+  height: auto;
+  max-height: calc(90vh - 120px);
+}
+
+/* Form Styles */
+.api-key-form-group {
+  margin-bottom: 1.5rem;
+}
+
+.api-key-form-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.api-key-input {
+  width: 100%;
+  padding: 0.75rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: #fff;
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
+}
+
+.api-key-input:focus {
+  outline: none;
+  border-color: rgba(99, 102, 241, 0.5);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+}
+
+.api-key-input::placeholder {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+/* API Key Display */
+.api-key-display-box {
+  position: relative;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.api-key-value {
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 0.75rem;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.9);
+  word-break: break-all;
+  user-select: all;
+  cursor: text;
+  padding: 0.5rem;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+  margin-bottom: 0.75rem;
+}
+
+.api-key-copy-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.75rem;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  color: #fff;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.api-key-copy-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.api-key-copy-btn.copied {
+  background: rgba(34, 197, 94, 0.2);
+  border-color: rgba(34, 197, 94, 0.4);
+  color: #22C55E;
+}
+
+.api-key-copy-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Create Button */
+.create-btn {
+  background: linear-gradient(135deg, #6366F1, #3B82F6);
+  color: #fff;
+  border: 0;
+  border-radius: 10px;
+  padding: 0.45rem 0.8rem;
+  cursor: pointer;
+  box-shadow: 0 0 24px rgba(59, 130, 246, 0.35);
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.create-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 0 32px rgba(59, 130, 246, 0.5);
+}
+
+/* Danger Button */
+.btn-danger {
+  background: linear-gradient(135deg, #EF4444, #DC2626);
+  color: #fff;
+  border: 0;
+  border-radius: 8px;
+  padding: 0.35rem 0.6rem;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.btn-danger:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+/* Responsive */
+@media (max-width: 1100px), (max-height: 750px) {
+  .api-key-create-modal,
+  .api-key-show-modal {
+    width: 90vw;
+    max-width: 500px;
+  }
+
+  .api-keys-table {
+    font-size: 0.8rem;
+  }
+
+  .api-keys-table th,
+  .api-keys-table td {
+    padding: 0.5rem;
+  }
+}

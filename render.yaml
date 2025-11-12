@@ -1,0 +1,46 @@
+services:
+  - type: web
+    name: wrap-x-api
+    env: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_SYNC_URL
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ENCRYPTION_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_PUBLISHABLE_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: STRIPE_PRODUCT_STARTER
+        sync: false
+      - key: STRIPE_PRODUCT_PROFESSIONAL
+        sync: false
+      - key: STRIPE_PRODUCT_BUSINESS
+        sync: false
+      - key: STRIPE_PRICE_STARTER
+        sync: false
+      - key: STRIPE_PRICE_PROFESSIONAL
+        sync: false
+      - key: STRIPE_PRICE_BUSINESS
+        sync: false
+      - key: FRONTEND_BASE_URL
+        value: https://wrap-x.com
+      - key: ENVIRONMENT
+        value: production
+
+databases:
+  - name: wrapx-db
+    databaseName: wrapx_db
+    user: wrapx_user
+    plan: starter
+

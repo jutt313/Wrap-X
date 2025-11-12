@@ -1,0 +1,22 @@
+.projects-modal { position: relative; }
+.projects-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: .75rem; }
+.projects-header h3 { margin: 0; color: rgba(255,255,255,.96); }
+.create-btn { background: linear-gradient(135deg, #6366F1,#3B82F6); color:#fff; border:0; border-radius:10px; padding:.45rem .8rem; cursor:pointer; box-shadow: 0 0 24px rgba(59,130,246,.35); }
+
+.mini-modal { background: rgba(15,23,42,.9); border:1px solid rgba(99,102,241,.3); border-radius:14px; padding:1rem; margin-bottom: .75rem; box-shadow: 0 10px 30px rgba(0,0,0,.45); }
+.mini-title { font-weight:600; color: rgba(255,255,255,.96); margin-bottom: .25rem; }
+.mini-desc { color: rgba(255,255,255,.75); font-size:.9rem; margin: 0 0 .75rem 0; }
+.mini-label { display:block; color: rgba(255,255,255,.85); font-size:.85rem; margin-bottom:.25rem; }
+.mini-input { width:100%; background: rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.12); color:#fff; border-radius:8px; padding:.5rem .6rem; margin-bottom:.6rem; }
+.mini-actions { display:flex; gap:.5rem; justify-content:flex-end; }
+.btn-secondary { background: rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.12); color:#fff; border-radius:8px; padding:.45rem .8rem; cursor:pointer; }
+.btn-primary { background: linear-gradient(135deg, #6366F1,#3B82F6); color:#fff; border:0; border-radius:8px; padding:.45rem .8rem; cursor:pointer; }
+.btn-danger { background: linear-gradient(135deg, #EF4444,#DC2626); color:#fff; border:0; border-radius:8px; padding:.35rem .6rem; cursor:pointer; }
+
+.projects-table { width:100%; border-collapse: collapse; }
+.projects-table th, .projects-table td { padding:.65rem; border-bottom:1px solid rgba(255,255,255,.08); color: rgba(255,255,255,.92); text-align:left; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; letter-spacing: .5px; }
+.id-cell { cursor: pointer; }
+.id-cell:hover { color: #93c5fd; }
+.empty { padding: 1rem; color: rgba(255,255,255,.75); }
+

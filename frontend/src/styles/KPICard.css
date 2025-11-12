@@ -1,0 +1,73 @@
+.kpi-card {
+  background: rgba(255, 255, 255, 0.07);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 1rem 1.25rem; /* tighter padding to reduce height */
+  transition: all 0.3s ease;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+}
+
+.kpi-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow: 0 15px 40px rgba(0, 0, 0, 0.3);
+}
+
+.kpi-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  align-items: flex-start; /* left align */
+  text-align: left;
+}
+
+.kpi-title {
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.92); /* brighter text */
+  font-weight: 600;
+  margin: 0;
+}
+
+.kpi-value {
+  font-size: 1.6rem; /* slightly smaller */
+  font-weight: 700;
+  background: linear-gradient(135deg, #a78bfa 0%, #22d3ee 100%); /* two-tone, not heavy blue */
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.kpi-subtitle {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.86); /* brighter subtitle */
+}
+
+.kpi-time-filter {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.kpi-time-filter button {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.7);
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.75rem;
+  transition: all 0.2s;
+}
+
+.kpi-time-filter button:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.kpi-time-filter button.active {
+  background: linear-gradient(135deg, #6366F1 0%, #3B82F6 100%);
+  border-color: transparent;
+  color: white;
+}
+

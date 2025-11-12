@@ -1,0 +1,334 @@
+/* Dashboard Styles with Glassmorphism & U-Shape Light Effect */
+
+.dashboard-container {
+  min-height: 100vh;
+  width: 100%;
+  position: relative;
+  padding: 1.25rem; /* tighten outer padding */
+  padding-top: 0.75rem;
+}
+
+/* Reuse gradient background from Welcome */
+.dashboard-background {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.dashboard-dark-top-layer {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  /* Even darker, similar to auth pages */
+  background: linear-gradient(180deg,
+    #020617 0%,
+    #030a1f 28%,
+    #061026 60%,
+    #0b142b 78%,
+    #0f1b33 100%);
+  z-index: 1;
+}
+
+.dashboard-light-bottom-layer {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(180deg, 
+    transparent 0%,
+    rgba(30, 41, 59, 0.3) 40%,
+    rgba(51, 65, 85, 0.5) 60%,
+    rgba(71, 85, 105, 0.7) 80%,
+    rgba(100, 116, 139, 0.8) 100%);
+  z-index: 2;
+  transition: opacity 400ms ease, filter 400ms ease;
+}
+
+.dashboard-curve-light {
+  position: absolute;
+  bottom: -50%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 120%;
+  height: 150%;
+  background: radial-gradient(
+    ellipse at center bottom,
+    rgba(59, 130, 246, 0.15) 0%,
+    rgba(124, 58, 237, 0.1) 25%,
+    rgba(34, 211, 238, 0.08) 40%,
+    transparent 70%
+  );
+  border-radius: 50% 50% 0 0;
+  z-index: 3;
+  filter: blur(80px);
+  opacity: 1;
+  transition: opacity 400ms ease, transform 400ms ease, filter 400ms ease;
+}
+
+/* Swap light source to top when container has .light-top */
+/* We keep the bottom light fixed; no top swap to preserve UI stability */
+
+/* Soften bottom light when top is active */
+/* Keep existing bottom layer gradient */
+
+/* Make Wrap-X button darker when light is at top */
+/* Button remains consistent */
+
+/* Default state alias for clarity */
+.dashboard-container.light-bottom .dashboard-curve-light {
+  bottom: -50%;
+  top: auto;
+  opacity: 1;
+}
+
+/* Corner lights (top-left, top-right) for smoother feel without abrupt swap */
+.corner-light {
+  position: absolute;
+  width: 45vmax;
+  height: 45vmax;
+  pointer-events: none;
+  filter: blur(80px);
+  opacity: 0.35; /* always subtly visible */
+  transition: opacity 450ms ease;
+  z-index: 2;
+}
+
+.corner-light.top-left {
+  top: -20vmax;
+  left: -10vmax;
+  background: radial-gradient(
+    circle at center,
+    rgba(124, 58, 237, 0.12) 0%,
+    rgba(59, 130, 246, 0.10) 35%,
+    transparent 70%
+  );
+}
+
+.corner-light.top-right {
+  top: -18vmax;
+  right: -8vmax;
+  background: radial-gradient(
+    circle at center,
+    rgba(34, 211, 238, 0.12) 0%,
+    rgba(59, 130, 246, 0.10) 35%,
+    transparent 70%
+  );
+}
+
+/* When light at top is active, show the corner lights gracefully */
+/* Corner lights stay subtle at all times */
+
+/* Side lights for stronger left/right glow like auth pages */
+.side-light {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 55vmax;
+  height: 55vmax;
+  pointer-events: none;
+  filter: blur(100px);
+  opacity: 0.25;
+  z-index: 2;
+}
+
+.side-light.left {
+  left: -20vmax;
+  background: radial-gradient(
+    circle at center,
+    rgba(99, 102, 241, 0.18) 0%,
+    rgba(37, 99, 235, 0.12) 30%,
+    transparent 70%
+  );
+}
+
+.side-light.right {
+  right: -20vmax;
+  background: radial-gradient(
+    circle at center,
+    rgba(56, 189, 248, 0.18) 0%,
+    rgba(99, 102, 241, 0.12) 30%,
+    transparent 70%
+  );
+}
+
+/* Header Styles */
+.dashboard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+  position: relative;
+  z-index: 3000; /* above KPI cards so dropdowns can overlay */
+}
+
+.dashboard-header-left {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.dashboard-welcome {
+  font-size: 2.25rem; /* bigger welcome */
+  line-height: 1.2;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.92);
+  white-space: nowrap; /* keep on one line */
+  overflow: hidden; /* avoid overflow */
+  text-overflow: ellipsis; /* show ellipsis if too long */
+}
+
+.dashboard-welcome .username {
+  background: linear-gradient(135deg, #a78bfa 0%, #22d3ee 100%); /* two-tone */
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.dashboard-header-right {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.dashboard-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.wrap-x-button {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  padding: 0.5rem 1rem;
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-decoration: none;
+  display: inline-block;
+}
+
+.wrap-x-button:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+/* KPI Cards Grid */
+.dashboard-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(260px, 1fr)); /* wider cards */
+  gap: 1rem; /* less vertical space */
+  margin-bottom: 1.5rem;
+  position: relative;
+  z-index: 1; /* keep below header/dropdowns */
+}
+
+/* Graphs Section */
+.dashboard-graphs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr); /* three graphs in one row */
+  gap: 1.25rem;
+  margin-bottom: 1.5rem;
+  position: relative;
+  z-index: 10;
+}
+
+/* Table Styles */
+.dashboard-table-container {
+  background: rgba(255, 255, 255, 0.07);
+  backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 1.25rem; /* tighter */
+  position: relative;
+  z-index: 10;
+  overflow-x: auto;
+}
+
+.dashboard-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.dashboard-table thead {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.dashboard-table th {
+  padding: 1rem;
+  text-align: left;
+  color: rgba(255, 255, 255, 0.95); /* brighter */
+  font-weight: 600;
+  font-size: 0.875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.dashboard-table td {
+  padding: 1rem;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 0.875rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.dashboard-table tbody tr {
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.dashboard-table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.status-badge.active {
+  background: rgba(16, 185, 129, 0.2);
+  color: #10B981;
+}
+
+.status-badge.inactive {
+  background: rgba(239, 68, 68, 0.2);
+  color: #EF4444;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 3rem;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+/* Responsive */
+@media (max-width: 1200px) {
+  .dashboard-graphs {
+    grid-template-columns: 1fr; /* stack on smaller screens */
+  }
+}
+
+@media (max-width: 768px) {
+  .dashboard-container {
+    padding: 1rem;
+  }
+  
+  .dashboard-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+  }
+  
+  .dashboard-kpi-grid {
+    grid-template-columns: 1fr;
+  }
+}

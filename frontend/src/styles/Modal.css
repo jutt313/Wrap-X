@@ -1,0 +1,99 @@
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.55);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 5000;
+  overscroll-behavior: contain; /* prevent background scroll chaining */
+}
+
+.modal-card {
+  width: 1000px; /* fixed large width */
+  height: 680px; /* fixed large height */
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(17, 24, 39, 0.93));
+  border: 1px solid rgba(99, 102, 241, 0.28);
+  border-radius: 16px; /* rounded corner */
+  box-shadow: 0 30px 80px rgba(0,0,0,0.55), 0 0 60px rgba(59,130,246,0.25); /* glow */
+  color: rgba(255,255,255,0.96);
+  overflow: hidden;
+}
+
+.modal-header { display: flex; align-items: center; justify-content: space-between; padding: 1rem 1.25rem; border-bottom: 1px solid rgba(255,255,255,0.08); }
+.modal-title { margin: 0; font-size: 1.05rem; font-weight: 600; }
+.modal-close { display: none; }
+.modal-body { padding: 1.25rem; overflow: auto; height: calc(680px - 64px); display: flex; flex-direction: column; }
+.add-llm-popup .modal-body { padding: 0.85rem 1.25rem; height: calc(600px - 64px - 64px); } /* Very tight padding for Add LLM popup */
+
+/* Responsive fallback for smaller screens */
+@media (max-width: 1100px), (max-height: 750px) {
+  .modal-card {
+    width: 92vw;
+    height: 90vh;
+  }
+  .modal-body { height: calc(90vh - 64px - 64px); }
+}
+
+.coming-text { color: rgba(255,255,255,0.92); font-size: 0.95rem; }
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding: 1rem 1.25rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  margin-top: auto;
+  flex-shrink: 0;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(17, 24, 39, 0.93));
+}
+.add-llm-popup .modal-footer { padding: 0.65rem 1.25rem; } /* Very tight footer padding */
+
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  padding: 0.75rem 1.5rem;
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #6366F1 0%, #3B82F6 100%);
+  border: none;
+  border-radius: 8px;
+  padding: 0.75rem 1.5rem;
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4);
+}
+
+.btn-primary:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(59, 130, 246, 0.6);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+

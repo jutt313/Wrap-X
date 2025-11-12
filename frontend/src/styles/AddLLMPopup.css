@@ -1,0 +1,73 @@
+/* Add LLM Popup Styles */
+
+.add-llm-popup {
+  width: 540px;
+  height: 600px;
+  max-width: 90vw;
+  max-height: 90vh;
+}
+
+.add-llm-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem; /* Even tighter */
+  padding: 0;
+}
+
+.add-llm-form .form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem; /* Even tighter */
+}
+
+.add-llm-form .form-group label {
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 500;
+  font-size: 0.85rem; /* Slightly smaller */
+  margin-bottom: 0;
+}
+
+.add-llm-form .form-group input,
+.add-llm-form .form-group select {
+  padding: 0.55rem 0.75rem; /* Even more compact */
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+  font-size: 0.9rem; /* Compact font */
+  transition: border-color 0.2s ease;
+}
+
+.add-llm-form .form-group input:focus,
+.add-llm-form .form-group select:focus {
+  border-color: #3B82F6;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+.add-llm-form .form-group select {
+  cursor: pointer;
+}
+
+.add-llm-form .form-group select option {
+  background: rgba(17, 24, 39, 0.95);
+  color: #fff;
+}
+
+.form-hint {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.75rem; /* Smaller */
+  margin-top: -0.15rem;
+}
+
+.error-message {
+  color: #EF4444;
+  font-size: 0.8rem; /* Smaller */
+  padding: 0.5rem 0.75rem; /* Very compact */
+  background: rgba(239, 68, 68, 0.1);
+  border-radius: 8px;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  margin-top: -0.75rem; /* Bring even closer */
+  margin-bottom: -0.25rem; /* Reduce space below */
+}
+

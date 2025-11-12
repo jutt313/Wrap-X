@@ -1,0 +1,503 @@
+/* Chat Page Styles */
+/* Prevent body scrolling when on chat page */
+body:has(.chat-page) {
+  overflow: hidden !important;
+}
+
+.chat-page {
+  height: 100vh; /* Fixed height, no scrolling */
+  width: 100vw; /* Full viewport width */
+  position: fixed; /* Fixed position to prevent scrolling */
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden; /* Page should NOT scroll */
+  background: linear-gradient(180deg, #0a0e27 0%, #1a1f3a 50%, #0f172a 100%);
+  display: flex;
+  flex-direction: row; /* Horizontal layout for left and right panels */
+}
+
+/* Top Header Bar - spans full width from left to right */
+.chat-top-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 60px; /* Increased height */
+  padding: 0 40px; /* 40px padding on left and right */
+  background: rgba(17, 24, 39, 0.75); /* Same color as chat card but 75% opacity */
+  backdrop-filter: blur(8px); /* Frosted glass effect */
+  -webkit-backdrop-filter: blur(8px); /* Safari support */
+  /* No border */
+  z-index: 100;
+  border-radius: 0 0 0 0; /* No rounding on top */
+  display: flex; /* Show header */
+  align-items: center; /* Center content vertically */
+  justify-content: space-between; /* Space between left and right buttons */
+  gap: 1rem; /* Space between sections */
+}
+
+/* Header Center - Wrap Name + Status */
+.header-center {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex: 1;
+  justify-content: center;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.wrap-name-header {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, #60A5FA 0%, #A78BFA 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  white-space: nowrap;
+}
+
+.status-badge-header {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.status-badge-header.active {
+  background: rgba(34, 197, 94, 0.2);
+  color: #4ADE80;
+  border: 1px solid rgba(34, 197, 94, 0.4);
+}
+
+.status-badge-header.inactive {
+  background: rgba(239, 68, 68, 0.2);
+  color: #F87171;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.status-badge-header.active .status-dot {
+  background: #4ADE80;
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.6);
+}
+
+.status-badge-header.inactive .status-dot {
+  background: #F87171;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+}
+
+.wrap-name-loading,
+.wrap-name-error {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.9rem;
+}
+
+/* Back Button in Header */
+.back-button-header {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 50%; /* Fully rounded (circular) */
+  width: 40px; /* Fixed size for icon button */
+  height: 40px;
+  padding: 0;
+  color: rgba(255, 255, 255, 0.9);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.back-button-header svg {
+  width: 20px;
+  height: 20px;
+  stroke-width: 2;
+}
+
+.back-button-header:hover {
+  background: rgba(59, 130, 246, 0.3); /* Blue glow color */
+  border-color: rgba(59, 130, 246, 0.6);
+  box-shadow: 0 0 15px rgba(59, 130, 246, 0.5), 0 0 25px rgba(59, 130, 246, 0.3); /* Glow effect */
+  transform: scale(1.05);
+  color: rgba(255, 255, 255, 1);
+}
+
+/* Header Buttons Right Container */
+.header-buttons-right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+/* Config Button in Header */
+.config-button-header {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 50%; /* Circular by default */
+  width: 40px; /* Icon only size */
+  height: 40px;
+  padding: 0;
+  color: rgba(255, 255, 255, 0.9);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.config-button-header .config-icon {
+  width: 20px;
+  height: 20px;
+  stroke-width: 2;
+  transition: all 0.3s ease;
+}
+
+.config-button-header .config-text {
+  display: none; /* Hidden by default */
+  white-space: nowrap;
+  margin-left: 0.5rem;
+  font-weight: 500;
+  font-size: 0.85rem;
+  transition: all 0.3s ease;
+}
+
+.config-button-header:hover {
+  border-radius: 20px; /* Rounded pill on hover */
+  width: auto; /* Expand width on hover */
+  padding: 0 1rem; /* Add horizontal padding */
+  background: rgba(34, 197, 94, 0.3); /* Green glow color */
+  border-color: rgba(34, 197, 94, 0.6);
+  box-shadow: 0 0 15px rgba(34, 197, 94, 0.5), 0 0 25px rgba(34, 197, 94, 0.3); /* Green glow effect */
+  transform: scale(1.05);
+  color: rgba(255, 255, 255, 1);
+}
+
+.config-button-header:hover .config-text {
+  display: inline-block; /* Show text on hover */
+  animation: fadeIn 0.3s ease;
+}
+
+.config-button-header:hover .config-icon {
+  width: 18px; /* Slightly smaller on hover to fit text */
+  height: 18px;
+}
+
+/* API Key Button in Header */
+.api-key-button-header {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 50%; /* Circular by default */
+  width: 40px; /* Icon only size */
+  height: 40px;
+  padding: 0;
+  color: rgba(255, 255, 255, 0.9);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.api-key-button-header .api-key-icon {
+  width: 20px;
+  height: 20px;
+  stroke-width: 2;
+  transition: all 0.3s ease;
+}
+
+.api-key-button-header .api-key-text {
+  display: none; /* Hidden by default */
+  white-space: nowrap;
+  margin-left: 0.5rem;
+  font-weight: 500;
+  font-size: 0.85rem;
+  transition: all 0.3s ease;
+}
+
+.api-key-button-header:hover {
+  border-radius: 20px; /* Rounded pill on hover */
+  width: auto; /* Expand width on hover */
+  padding: 0 1rem; /* Add horizontal padding */
+  background: rgba(139, 92, 246, 0.3); /* Purple glow color */
+  border-color: rgba(139, 92, 246, 0.6);
+  box-shadow: 0 0 15px rgba(139, 92, 246, 0.5), 0 0 25px rgba(139, 92, 246, 0.3); /* Purple glow effect */
+  transform: scale(1.05);
+  color: rgba(255, 255, 255, 1);
+}
+
+.api-key-button-header:hover .api-key-text {
+  display: inline-block; /* Show text on hover */
+  animation: fadeIn 0.3s ease;
+}
+
+.api-key-button-header:hover .api-key-icon {
+  width: 18px; /* Slightly smaller on hover to fit text */
+  height: 18px;
+}
+
+/* Deploy Button in Header */
+.deploy-button-header {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 50%; /* Circular by default */
+  width: 40px; /* Icon only size */
+  height: 40px;
+  padding: 0;
+  color: rgba(255, 255, 255, 0.9);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.deploy-button-header .deploy-icon {
+  width: 20px;
+  height: 20px;
+  stroke-width: 2;
+  transition: all 0.3s ease;
+}
+
+.deploy-button-header .deploy-text {
+  display: none; /* Hidden by default */
+  white-space: nowrap;
+  margin-left: 0.5rem;
+  font-weight: 500;
+  font-size: 0.85rem;
+  transition: all 0.3s ease;
+}
+
+.deploy-button-header:hover {
+  border-radius: 20px; /* Rounded pill on hover */
+  width: auto; /* Expand width on hover */
+  padding: 0 1rem; /* Add horizontal padding */
+  background: rgba(249, 115, 22, 0.3); /* Orange glow color */
+  border-color: rgba(249, 115, 22, 0.6);
+  box-shadow: 0 0 15px rgba(249, 115, 22, 0.5), 0 0 25px rgba(249, 115, 22, 0.3); /* Orange glow effect */
+  transform: scale(1.05);
+  color: rgba(255, 255, 255, 1);
+}
+
+.deploy-button-header:hover .deploy-text {
+  display: inline-block; /* Show text on hover */
+  animation: fadeIn 0.3s ease;
+}
+
+.deploy-button-header:hover .deploy-icon {
+  width: 18px; /* Slightly smaller on hover to fit text */
+  height: 18px;
+}
+
+/* Documentation Button in Header */
+.documentation-button-header {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 50%; /* Circular by default */
+  width: 40px; /* Icon only size */
+  height: 40px;
+  padding: 0;
+  color: rgba(255, 255, 255, 0.9);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.documentation-button-header .documentation-icon {
+  width: 20px;
+  height: 20px;
+  stroke-width: 2;
+  transition: all 0.3s ease;
+}
+
+.documentation-button-header .documentation-text {
+  display: none; /* Hidden by default */
+  white-space: nowrap;
+  margin-left: 0.5rem;
+  font-weight: 500;
+  font-size: 0.85rem;
+  transition: all 0.3s ease;
+}
+
+.documentation-button-header:hover {
+  border-radius: 20px; /* Rounded pill on hover */
+  width: auto; /* Expand width on hover */
+  padding: 0 1rem; /* Add horizontal padding */
+  background: rgba(59, 130, 246, 0.3); /* Blue glow color */
+  border-color: rgba(59, 130, 246, 0.6);
+  box-shadow: 0 0 15px rgba(59, 130, 246, 0.5), 0 0 25px rgba(59, 130, 246, 0.3); /* Blue glow effect */
+  transform: scale(1.05);
+  color: rgba(255, 255, 255, 1);
+}
+
+.documentation-button-header:hover .documentation-text {
+  display: inline-block; /* Show text on hover */
+  animation: fadeIn 0.3s ease;
+}
+
+.documentation-button-header:hover .documentation-icon {
+  width: 18px; /* Slightly smaller on hover to fit text */
+  height: 18px;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Light effect from top left */
+.chat-page::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 600px;
+  height: 600px;
+  background: radial-gradient(circle, rgba(59, 130, 246, 0.25) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Light effect from bottom right */
+.chat-page::after {
+  content: '';
+  position: fixed;
+  bottom: 0;
+  right: 0;
+  width: 500px;
+  height: 500px;
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.2) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Config Chat Panel Wrapper - Upside-down L shape */
+.config-chat-panel-wrapper {
+  position: fixed; /* Fixed position */
+  top: 60px; /* Below header (60px height) */
+  left: 0;
+  min-width: 400px;
+  max-width: 80%;
+  height: calc(100vh - 60px); /* Subtract header height */
+  z-index: 10;
+  overflow: hidden; /* Prevent wrapper from scrolling */
+}
+
+/* Top horizontal bar (60px height) - part of L shape */
+.top-bar {
+  position: absolute;
+  top: -60px; /* Above the panel to align with header */
+  left: 0;
+  right: 0;
+  height: 60px;
+  background: rgba(17, 24, 39, 0.98);
+  border-radius: 24px 0 0 0; /* Rounded top-left corner */
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  z-index: 1;
+}
+
+/* Right Panel Top Bar - Rounded on right */
+.right-panel-top-bar {
+  position: absolute;
+  top: -60px; /* Above the panel to align with header */
+  left: 0;
+  right: 0;
+  height: 60px;
+  background: rgba(17, 24, 39, 0.98);
+  border-radius: 0 24px 0 0; /* Rounded top-right corner */
+  z-index: 1;
+}
+
+/* Resize Handle */
+.resize-handle {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  background: transparent;
+  z-index: 102;
+  transition: background 0.2s ease;
+}
+
+.resize-handle:hover {
+  background: rgba(59, 130, 246, 0.3);
+}
+
+.resize-handle:active {
+  background: rgba(59, 130, 246, 0.5);
+}
+
+/* Right Panel Wrapper */
+.right-panel-wrapper {
+  position: fixed; /* Fixed position */
+  top: 60px; /* Below header */
+  right: 0;
+  bottom: 0;
+  overflow: visible; /* Allow top bar to show */
+  transition: left 0.2s ease, width 0.2s ease; /* Smooth transition when left panel resizes */
+  z-index: 9; /* Below left panel but above background */
+}
+
+/* Right Panel Top Bar - Rounded on right */
+.right-panel-top-bar {
+  position: absolute;
+  top: -60px; /* Above the panel to align with header */
+  left: 0;
+  right: 0;
+  height: 60px;
+  background: rgba(17, 24, 39, 0.98);
+  border-radius: 0 24px 0 0; /* Rounded top-right corner */
+  z-index: 1;
+}
+
+/* Right Panel - Rounded on right side */
+.right-panel {
+  width: 100%;
+  height: 100%;
+  background: transparent; /* Transparent to show chat card */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: visible; /* Allow chat card to be visible */
+  padding: 2rem;
+  /* Top bar is positioned absolutely above, so no margin needed */
+}
+
+/* Test Chat Card is now handled by TestChat component */
+
