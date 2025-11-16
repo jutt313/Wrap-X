@@ -414,14 +414,19 @@ RESPONSE MESSAGE FORMAT (ENHANCED)
     
     This AI will [describe how it will behave based on the config].
     
-    Everything looks good! Ready to create this? (Yes/No)"
+    Everything looks good! Ready to create this?"
   * Make the summary helpful - show them what they're getting
 
 - NEVER say "Ready to create?" unless:
   1. PURPOSE/USE CASE is fully understood (WHERE, WHO, WHAT PROBLEM)
   2. ALL required fields are filled: role, instructions, rules, behavior, tone, examples (20-25), model
-- If user says "Yes" to creating, return COMPLETE config with all fields filled
-- If user says "No", ask what they'd like to change in a natural way
+
+- CRITICAL: DETECTING USER CONFIRMATION TO CREATE:
+  * If user says ANY of these: "yes", "yep", "yeah", "sure", "ok", "okay", "create", "create it", "go ahead", "proceed", "let's do it", "build it", "make it", "do it", "ready", "let's go", "sounds good", "perfect", "great", "alright", "fine", "confirm", "approved", "accept", "agree"
+  * AND all required fields are filled (role, instructions, rules, behavior, tone, examples, model)
+  * THEN: IMMEDIATELY return COMPLETE config with ALL fields filled - DO NOT ask "Ready to create?" again
+  * DO NOT repeat the same question - if user confirmed, CREATE IT NOW
+  * If user says "No" or wants changes, ask what they'd like to change in a natural way
 
 VALIDATION
 - All enum fields must match allowed values exactly
@@ -477,11 +482,39 @@ CRITICAL
 - Be conversational and smart. Ask ONE question at a time, but make it natural, not rigid.
 - When user says "hi/hello", ask them to tell you what they want to build first. Don't jump into questions immediately.
 - Listen to what the user wants, then ask clarifying questions naturally.
-- If user says "Yes" to creating, return COMPLETE config with all fields filled
-- If user says "No", ask what they'd like to change in a natural way
+- CRITICAL: USER CONFIRMATION DETECTION:
+  * If user message contains ANY of these words/phrases: "yes", "yep", "yeah", "sure", "ok", "okay", "create", "create it", "go ahead", "proceed", "let's do it", "build it", "make it", "do it", "ready", "let's go", "sounds good", "perfect", "great", "alright", "fine", "confirm", "approved", "accept", "agree", "why waiting", "why not", "just create", "just do it"
+  * AND all required fields are filled (role, instructions, rules, behavior, tone, examples 20-25, model)
+  * THEN: IMMEDIATELY return COMPLETE config with ALL fields filled - DO NOT ask "Ready to create?" again
+  * DO NOT repeat confirmation questions - if user already confirmed, CREATE IT NOW
+  * If user says "No" or wants changes, ask what they'd like to change in a natural way
+  
 - If user mentions test chat issues, ALWAYS analyze test_chat_logs and suggest fixes in response_message
 - If the user's message contains no meaningful configuration intent (e.g., greetings like "hi"/"hello"), ask them to tell you about what they want to build. Keep other fields empty or defaults.
 """
+        
+        # Check if user message contains confirmation words/phrases
+        confirmation_keywords = [
+            "yes", "yep", "yeah", "sure", "ok", "okay", "create", "create it", 
+            "go ahead", "proceed", "let's do it", "build it", "make it", "do it", 
+            "ready", "let's go", "sounds good", "perfect", "great", "alright", 
+            "fine", "confirm", "approved", "accept", "agree", "why waiting", 
+            "why not", "just create", "just do it", "sure create", "sure go ahead"
+        ]
+        user_message_lower = message.lower().strip()
+        is_confirmation = any(keyword in user_message_lower for keyword in confirmation_keywords)
+        
+        # If user confirmed and we have enough info, add explicit instruction to create
+        if is_confirmation:
+            # Check if we have minimum required fields
+            has_minimum_fields = (
+                current_config.get("role") and 
+                current_config.get("instructions") and 
+                current_config.get("model")
+            )
+            if has_minimum_fields:
+                # Add explicit instruction to force complete config
+                system_prompt += "\n\n🚨 CRITICAL: USER JUST CONFIRMED CREATION WITH WORDS LIKE 'yes', 'sure', 'create', etc. 🚨\n\nYOU MUST:\n1. Return COMPLETE config with ALL fields filled NOW\n2. Use current_config values for fields that exist\n3. Fill missing fields with smart defaults:\n   - If tone missing: use 'Professional' or 'Friendly' based on context\n   - If examples missing: generate 20-25 numbered examples based on role\n   - If rules/behavior missing: create appropriate ones based on role\n   - Use defaults: temperature=0.3, max_tokens=1024, top_p=1.0, frequency_penalty=0.0\n4. DO NOT ask 'Ready to create?' again\n5. DO NOT repeat the same question\n6. CREATE IT NOW - return complete JSON with all fields\n\nThe user is frustrated because you keep asking. CREATE THE CONFIG IMMEDIATELY."
         
         # Build message history: system + prior history + current user message
         convo: List[Dict[str, str]] = [{"role": "system", "content": system_prompt}]
