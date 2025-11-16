@@ -212,6 +212,39 @@
   margin-bottom: 1rem;
 }
 
+/* Verification Status Styles */
+.verification-status {
+  text-align: center;
+  padding: 2rem;
+}
+
+.verification-status p {
+  font-size: 1.1rem;
+  margin-top: 1rem;
+}
+
+.loading-spinner {
+  width: 48px;
+  height: 48px;
+  border: 4px solid rgba(99, 102, 241, 0.2);
+  border-top-color: #6366F1;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 1rem;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.verification-status.success svg,
+.verification-status.error svg {
+  margin: 0 auto 1rem;
+  display: block;
+}
+
 .auth-links {
   margin-top: 1.5rem;
   text-align: center;

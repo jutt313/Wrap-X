@@ -26,8 +26,10 @@ from app.auth.dependencies import get_current_active_user
 from app.services.notification_service import create_notification
 from app.services.billing_service import get_user_subscription
 from app.services.email_service import email_service
+from app.config import settings
 import secrets
 import uuid
+import logging
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -442,11 +444,15 @@ async def verify_email(
             )
         
         if user.email_verified:
-            # Already verified - redirect to login
-            from fastapi.responses import RedirectResponse
-            return RedirectResponse(
-                url=f"{settings.frontend_base_url}/login?verified=true",
-                status_code=302
+            # Already verified - return success
+            from fastapi.responses import JSONResponse
+            return JSONResponse(
+                status_code=status.HTTP_200_OK,
+                content={
+                    "message": "Email already verified",
+                    "email": user.email,
+                    "already_verified": True
+                }
             )
         
         # Verify email and activate account
@@ -494,11 +500,15 @@ async def verify_email(
             metadata={"trial_days": 3}
         )
         
-        # Redirect to login with success message
-        from fastapi.responses import RedirectResponse
-        return RedirectResponse(
-            url=f"{settings.frontend_base_url}/login?verified=true&email={user.email}",
-            status_code=302
+        # Return JSON response (frontend will handle redirect)
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+                "message": "Email verified successfully",
+                "email": user.email,
+                "already_verified": False
+            }
         )
         
     except HTTPException:
