@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>Subscription Activated! 🎉</h1>
+<p>Thank you for upgrading to <strong>{{ plan_name }}</strong>!</p>
+
+<div class="info-box">
+    <p><strong>Subscription Details:</strong></p>
+    <p style="margin-top: 10px;">• Plan: {{ plan_name }}</p>
+    <p>• Amount: ${{ amount }}/month</p>
+    <p>• Next billing date: {{ next_billing_date }}</p>
+</div>
+
+<p>You now have full access to:</p>
+<ul style="margin: 20px 0; padding-left: 25px; color: rgba(255, 255, 255, 0.85);">
+    <li style="margin: 10px 0;">All premium features</li>
+    <li style="margin: 10px 0;">Priority support</li>
+    <li style="margin: 10px 0;">Advanced analytics</li>
+    <li style="margin: 10px 0;">Unlimited API configurations</li>
+</ul>
+
+<div style="text-align: center; margin: 30px 0;">
+    <a href="{{ frontend_url }}/dashboard" class="button">Go to Dashboard</a>
+</div>
+
+<p>Thank you for choosing Wrap-X! If you have any questions, we're here to help at {{ support_email }}.</p>
+{% endblock %}
+

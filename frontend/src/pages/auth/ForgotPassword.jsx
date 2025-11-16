@@ -33,6 +33,9 @@ function ForgotPassword() {
 
       <div className="auth-content">
         <div className="mirror-card auth-card">
+          <div className="auth-logo-container">
+            <img src="/logo-full.png" alt="Wrap-X" className="auth-logo" />
+          </div>
           <h1 className="auth-title">
             Reset <span className="gradient-text">Password</span>
           </h1>

@@ -157,6 +157,10 @@ class APIClient {
       ...options,
       method: 'PATCH',
       body: JSON.stringify(data),
+      headers: {
+        ...options.headers,
+        'Content-Type': 'application/json',
+      },
     });
   }
 

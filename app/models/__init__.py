@@ -17,6 +17,7 @@ from app.models.notification_settings import NotificationSettings
 from app.models.billing import Billing
 from app.models.audit_log import AuditLog
 from app.models.feedback import Feedback
+from app.models.uploaded_document import UploadedDocument
 
 __all__ = [
     "User",
@@ -38,5 +39,6 @@ __all__ = [
     "Billing",
     "AuditLog",
     "Feedback",
+    "UploadedDocument",
 ]
 

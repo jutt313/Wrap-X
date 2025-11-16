@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>Confirm Your Email Address</h1>
+<p>Welcome to Wrap-X! We're excited to have you on board.</p>
+<p>To complete your account registration, please confirm your email address by clicking the button below:</p>
+
+<div style="text-align: center; margin: 30px 0;">
+    <a href="{{ frontend_url }}/auth/verify-email?token={{ verification_token }}" class="button">Confirm Email Address</a>
+</div>
+
+<p>Or copy and paste this link into your browser:</p>
+<div class="info-box">
+    <p style="word-break: break-all; font-size: 14px;">{{ frontend_url }}/auth/verify-email?token={{ verification_token }}</p>
+</div>
+
+<p>This link will expire in 24 hours. If you didn't create an account with Wrap-X, please ignore this email.</p>
+
+<div class="divider"></div>
+
+<p style="font-size: 14px; color: rgba(255, 255, 255, 0.7);">
+    If the button doesn't work, you can also verify your email by visiting your account settings after logging in.
+</p>
+{% endblock %}
+

@@ -36,9 +36,8 @@ export function AuthProvider({ children }) {
 
   const register = async (email, password, name) => {
     const response = await authService.register(email, password, name);
-    const userData = await authService.getProfile();
-    setUser(userData);
-    // Redirect handled in Register component
+    // Registration now requires email verification, so no tokens/user data yet
+    // User will be set after email verification and login
     return response;
   };
 

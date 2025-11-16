@@ -22,6 +22,9 @@ class WrappedAPI(Base):
     top_p = Column(Float, nullable=True)
     frequency_penalty = Column(Float, nullable=True)
     config_version = Column(Integer, default=0, nullable=False)  # Version for concurrency control
+    # Tool toggles
+    web_search_enabled = Column(Boolean, default=False, nullable=False)
+    thinking_enabled = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -39,4 +42,5 @@ class WrappedAPI(Base):
     notifications = relationship("Notification", back_populates="wrapped_api", cascade="all, delete-orphan")
     feedbacks = relationship("Feedback", back_populates="wrapped_api", cascade="all, delete-orphan")
     config_versions = relationship("ConfigVersion", back_populates="wrapped_api", cascade="all, delete-orphan")
+    uploaded_documents = relationship("UploadedDocument", back_populates="wrapped_api", cascade="all, delete-orphan")
 

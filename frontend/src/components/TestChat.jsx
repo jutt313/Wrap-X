@@ -2,13 +2,27 @@ import React, { useState, useRef, useEffect } from 'react';
 import { chatService } from '../services/chatService';
 import '../styles/TestChat.css';
 
-function TestChat({ wrappedApiId, endpointId }) {
+function TestChat({ wrappedApiId, endpointId, wrappedAPI }) {
   const [messages, setMessages] = useState([]);
   const [inputValue, setInputValue] = useState('');
   const [loading, setLoading] = useState(false);
   const [initializing, setInitializing] = useState(true);
+  const [isConfigured, setIsConfigured] = useState(false);
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
+
+  // Check if wrap is configured
+  useEffect(() => {
+    if (wrappedAPI) {
+      // Check if prompt_config exists and has required fields
+      const hasRole = wrappedAPI.prompt_config?.role && wrappedAPI.prompt_config.role.trim().length > 0;
+      const hasInstructions = wrappedAPI.prompt_config?.instructions && wrappedAPI.prompt_config.instructions.trim().length > 0;
+      const hasModel = wrappedAPI.model && wrappedAPI.model.trim().length > 0;
+      
+      // Consider configured if it has role, instructions, and model
+      setIsConfigured(hasRole && hasInstructions && hasModel);
+    }
+  }, [wrappedAPI]);
 
   useEffect(() => {
     // Load any existing conversation history if needed
@@ -35,7 +49,7 @@ function TestChat({ wrappedApiId, endpointId }) {
   };
 
   const handleSend = async () => {
-    if (!inputValue.trim() || loading || !endpointId) return;
+    if (!inputValue.trim() || loading || !endpointId || !isConfigured) return;
 
     const userMessage = inputValue.trim();
     setInputValue('');
@@ -226,11 +240,41 @@ function TestChat({ wrappedApiId, endpointId }) {
     );
   }
 
+  // Show blocked state if not configured
+  if (!isConfigured) {
+    return (
+      <div className="test-chat-card">
+        <div className="test-chat-blocked-state">
+          <div className="blocked-illustration">
+            <svg width="120" height="120" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="60" cy="60" r="50" stroke="rgba(99, 102, 241, 0.3)" strokeWidth="2" fill="rgba(99, 102, 241, 0.05)"/>
+              <path d="M40 60L55 75L80 45" stroke="rgba(99, 102, 241, 0.5)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+              <rect x="35" y="35" width="50" height="50" rx="8" stroke="rgba(255, 255, 255, 0.1)" strokeWidth="2" strokeDasharray="4 4"/>
+            </svg>
+          </div>
+          <h3 className="blocked-title">Configure Your Wrap First</h3>
+          <p className="blocked-message">
+            Complete the configuration in the left panel to start testing your wrapped AI.
+          </p>
+          <p className="blocked-hint">
+            The AI needs a role, instructions, and model to be ready for testing.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="test-chat-card">
       <div className="test-chat-messages-container">
         {messages.length === 0 && (
           <div className="test-chat-empty-state">
+            <div className="empty-state-illustration">
+              <svg width="80" height="80" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <circle cx="40" cy="40" r="30" stroke="rgba(99, 102, 241, 0.3)" strokeWidth="2" fill="rgba(99, 102, 241, 0.05)"/>
+                <path d="M30 40L36 46L50 32" stroke="rgba(99, 102, 241, 0.6)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </div>
             <p>Start testing your wrapped LLM by sending a message below.</p>
           </div>
         )}
@@ -267,13 +311,13 @@ function TestChat({ wrappedApiId, endpointId }) {
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyPress}
             placeholder="Test your wrapped LLM..."
-            disabled={loading || !endpointId}
+            disabled={loading || !endpointId || !isConfigured}
             rows={1}
           />
           <button 
             className="test-send-button"
             onClick={handleSend}
-            disabled={loading || !inputValue.trim() || !endpointId}
+            disabled={loading || !inputValue.trim() || !endpointId || !isConfigured}
           >
             <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path d="M2.5 10L17.5 10M17.5 10L11.6667 3.33334M17.5 10L11.6667 16.6667" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>

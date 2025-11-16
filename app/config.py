@@ -27,10 +27,19 @@ class Settings(BaseSettings):
     stripe_price_business: Optional[str] = None  # price_...
 
     # Frontend configuration
-    frontend_base_url: str = "https://wrap-x.com"
+    frontend_base_url: str = "http://localhost:3000"  # Default to localhost for development
     
     # Render API (optional, for MCP)
     render_api: Optional[str] = None
+    
+    # SMTP Configuration (for email sending)
+    smtp_host: Optional[str] = None
+    smtp_port: int = 587
+    smtp_user: Optional[str] = None
+    smtp_password: Optional[str] = None
+    smtp_from_email: Optional[str] = None
+    smtp_from_name: Optional[str] = "Wrap-X Team"
+    smtp_use_tls: bool = True
 
     class Config:
         env_file = ".env"

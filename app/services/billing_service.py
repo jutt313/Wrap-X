@@ -6,6 +6,7 @@ from sqlalchemy import select
 from app.config import settings
 from app.models.billing import Billing
 from app.models.user import User
+from app.services.email_service import email_service
 import logging
 
 logger = logging.getLogger(__name__)
@@ -54,6 +55,22 @@ async def create_trial_subscription(user: User, db: AsyncSession) -> Billing:
         db.add(trial)
         await db.commit()
         await db.refresh(trial)
+        
+        # Send trial activated email
+        try:
+            email_service.send_template_email(
+                to_email=user.email,
+                template_name="trial_activated.html",
+                subject="Your Wrap-X Free Trial Has Started!",
+                context={
+                    "user_name": user.name or "User",
+                    "trial_end_date": trial.stripe_trial_end.strftime("%B %d, %Y") if trial.stripe_trial_end else "N/A",
+                    "to_email": user.email
+                }
+            )
+        except Exception as e:
+            logger.error(f"Failed to send trial activated email: {e}")
+        
         return trial
     except Exception as e:
         logger.error(f"Error creating trial subscription: {e}")

@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>Invoice Available</h1>
+<p>Your invoice for <strong>{{ plan_name }}</strong> is now available.</p>
+
+<div class="info-box">
+    <p><strong>Invoice Details:</strong></p>
+    <p style="margin-top: 10px;">• Invoice #: {{ invoice_number }}</p>
+    <p>• Amount: ${{ amount }}</p>
+    <p>• Date: {{ invoice_date }}</p>
+    <p>• Period: {{ billing_period }}</p>
+</div>
+
+<div style="text-align: center; margin: 30px 0;">
+    <a href="{{ invoice_url }}" class="button">View Invoice</a>
+</div>
+
+<p>You can download and print this invoice for your records. All invoices are also available in your billing settings.</p>
+
+<div style="text-align: center; margin: 20px 0;">
+    <a href="{{ frontend_url }}/billing" class="button button-secondary">Billing Settings</a>
+</div>
+
+<p>If you have any questions about this invoice, please contact us at {{ support_email }}.</p>
+{% endblock %}
+

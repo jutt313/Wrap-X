@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>Your Free Trial Has Started! 🚀</h1>
+<p>Welcome to Wrap-X! Your 3-day free trial is now active.</p>
+
+<div class="info-box">
+    <p><strong>Trial Details:</strong></p>
+    <p style="margin-top: 10px;">• Duration: 3 days</p>
+    <p>• Access: Full features</p>
+    <p>• No credit card required</p>
+</div>
+
+<p>During your trial, you can:</p>
+<ul style="margin: 20px 0; padding-left: 25px; color: rgba(255, 255, 255, 0.85);">
+    <li style="margin: 10px 0;">Create unlimited projects</li>
+    <li style="margin: 10px 0;">Configure multiple LLM providers</li>
+    <li style="margin: 10px 0;">Deploy wrapped APIs</li>
+    <li style="margin: 10px 0;">Monitor usage and analytics</li>
+</ul>
+
+<div style="text-align: center; margin: 30px 0;">
+    <a href="{{ frontend_url }}/dashboard" class="button">Start Building</a>
+</div>
+
+<p>Your trial ends on <strong>{{ trial_end_date }}</strong>. Upgrade anytime to continue using Wrap-X without interruption.</p>
+
+<p>Questions? We're here to help at {{ support_email }}.</p>
+{% endblock %}
+

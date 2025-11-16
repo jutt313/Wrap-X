@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.database import get_db
 from app.models.user import User
@@ -21,6 +21,7 @@ from app.models.api_key import APIKey
 from app.models.tool import Tool
 from app.models.wrapped_api_tool import WrappedAPITool
 from app.models.api_log import APILog
+from app.models.uploaded_document import UploadedDocument
 from app.schemas.wrapped_api import (
     WrappedAPICreate,
     WrappedAPIResponse,
@@ -34,8 +35,10 @@ from app.schemas.wrapped_api import (
     APIKeyResponse,
     APIKeyCreate,
     APIKeyListResponse,
-    APIKeyListItem
+    APIKeyListItem,
+    ToolsUpdateRequest
 )
+from app.schemas.uploaded_document import UploadedDocumentCreate, UploadedDocumentResponse
 from app.auth.dependencies import get_current_active_user
 from app.auth.utils import verify_token
 from app.services.chat_service import parse_chat_command, call_wrapped_llm
@@ -208,6 +211,8 @@ async def create_wrapped_api(
             max_tokens=new_wrapped_api.max_tokens,
             top_p=new_wrapped_api.top_p,
             frequency_penalty=new_wrapped_api.frequency_penalty,
+            web_search_enabled=new_wrapped_api.web_search_enabled,
+            thinking_enabled=new_wrapped_api.thinking_enabled,
             created_at=new_wrapped_api.created_at,
             updated_at=new_wrapped_api.updated_at,
             prompt_config=PromptConfigResponse(
@@ -287,6 +292,8 @@ async def list_wrapped_apis(
                 max_tokens=wa.max_tokens,
                 top_p=wa.top_p,
                 frequency_penalty=wa.frequency_penalty,
+                web_search_enabled=wa.web_search_enabled,
+                thinking_enabled=wa.thinking_enabled,
                 created_at=wa.created_at,
                 updated_at=wa.updated_at,
                 prompt_config=PromptConfigResponse(
@@ -372,6 +379,8 @@ async def get_wrapped_api(
         max_tokens=wrapped_api.max_tokens,
         top_p=wrapped_api.top_p,
         frequency_penalty=wrapped_api.frequency_penalty,
+        web_search_enabled=wrapped_api.web_search_enabled,
+        thinking_enabled=wrapped_api.thinking_enabled,
         created_at=wrapped_api.created_at,
         updated_at=wrapped_api.updated_at,
         prompt_config=PromptConfigResponse(
@@ -602,6 +611,28 @@ async def send_config_chat_message(
         # Sanitize chat logs before sending to AI
         test_chat_logs = sanitize_chat_logs(test_chat_logs_raw, max_logs=5, max_message_length=100)
         
+        # Load uploaded documents for this wrapped API
+        documents_info = []
+        try:
+            docs_result = await db.execute(
+                select(UploadedDocument)
+                .where(UploadedDocument.wrapped_api_id == wrapped_api_id)
+                .order_by(UploadedDocument.created_at.desc())
+            )
+            documents = docs_result.scalars().all()
+            documents_info = [
+                {
+                    "filename": doc.filename,
+                    "file_type": doc.file_type,
+                    "file_size": doc.file_size,
+                    "created_at": doc.created_at.isoformat() if doc.created_at else None
+                }
+                for doc in documents
+            ]
+        except Exception as e:
+            logger.warning(f"Failed to load documents: {e}")
+            documents_info = []
+
         # Get current config for parsing
         current_config = {
             "role": wrapped_api.prompt_config.role if wrapped_api.prompt_config else None,
@@ -619,6 +650,11 @@ async def send_config_chat_message(
             "wrap_name": wrapped_api.name,
             "project_name": project_name,
             "available_models": getattr(chat_request, 'available_models', None),
+            # Tool configurations
+            "thinking_enabled": getattr(wrapped_api, "thinking_enabled", False),
+            "web_search_enabled": getattr(wrapped_api, "web_search_enabled", False),
+            # Uploaded documents
+            "uploaded_documents": documents_info,
             # Test chat logs for analysis
             "test_chat_logs": test_chat_logs
         }
@@ -1387,3 +1423,212 @@ async def delete_api_key(
     
     logger.info(f"API key deleted: api_key_id={api_key_id}")
     return None
+
+
+@router.patch("/{wrapped_api_id}/tools", response_model=WrappedAPIResponse)
+async def update_tools(
+    wrapped_api_id: int,
+    tools_data: ToolsUpdateRequest,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Update tool toggles for a wrapped API"""
+    result = await db.execute(
+        select(WrappedAPI)
+        .where(
+            WrappedAPI.id == wrapped_api_id,
+            WrappedAPI.user_id == current_user.id
+        )
+        .options(selectinload(WrappedAPI.prompt_config))
+    )
+    wrapped_api = result.scalar_one_or_none()
+    
+    if not wrapped_api:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Wrapped API not found or not owned by user"
+        )
+    
+    # Update tool toggles
+    wrapped_api.web_search_enabled = tools_data.web_search_enabled
+    wrapped_api.thinking_enabled = tools_data.thinking_enabled
+    wrapped_api.updated_at = datetime.now(timezone.utc)
+    
+    # Flush to ensure changes are sent to database
+    await db.flush()
+    
+    # Commit the changes
+    await db.commit()
+    
+    # Refresh to get the latest state from database
+    await db.refresh(wrapped_api)
+    
+    # Double-check by querying directly from database to verify persistence
+    verify_result = await db.execute(
+        select(WrappedAPI.web_search_enabled, WrappedAPI.thinking_enabled)
+        .where(WrappedAPI.id == wrapped_api_id)
+    )
+    verify_row = verify_result.first()
+    if verify_row:
+        logger.info(f"DB Verified - web_search={verify_row.web_search_enabled}, thinking={verify_row.thinking_enabled}")
+        # Ensure we use the verified values from database
+        wrapped_api.web_search_enabled = verify_row.web_search_enabled
+        wrapped_api.thinking_enabled = verify_row.thinking_enabled
+    
+    # Get provider and project names for response
+    provider_name = None
+    if wrapped_api.provider_id:
+        provider_result = await db.execute(
+            select(LLMProvider).where(LLMProvider.id == wrapped_api.provider_id)
+        )
+        provider = provider_result.scalar_one_or_none()
+        if provider:
+            provider_name = provider.provider_name
+    
+    project_name = None
+    if wrapped_api.project_id:
+        project_result = await db.execute(
+            select(Project).where(Project.id == wrapped_api.project_id)
+        )
+        project = project_result.scalar_one_or_none()
+        if project:
+            project_name = project.name
+    
+    return WrappedAPIResponse(
+        id=wrapped_api.id,
+        user_id=wrapped_api.user_id,
+        project_id=wrapped_api.project_id,
+        provider_id=wrapped_api.provider_id,
+        name=wrapped_api.name,
+        endpoint_id=wrapped_api.endpoint_id,
+        is_active=wrapped_api.is_active,
+        thinking_mode=wrapped_api.thinking_mode,
+        model=wrapped_api.model,
+        temperature=wrapped_api.temperature,
+        max_tokens=wrapped_api.max_tokens,
+        top_p=wrapped_api.top_p,
+        frequency_penalty=wrapped_api.frequency_penalty,
+        web_search_enabled=wrapped_api.web_search_enabled,
+        thinking_enabled=wrapped_api.thinking_enabled,
+        created_at=wrapped_api.created_at,
+        updated_at=wrapped_api.updated_at,
+        prompt_config=PromptConfigResponse.model_validate(wrapped_api.prompt_config) if wrapped_api.prompt_config else None,
+        provider_name=provider_name,
+        project_name=project_name
+    )
+
+@router.post("/{wrapped_api_id}/documents", response_model=UploadedDocumentResponse)
+async def upload_document(
+    wrapped_api_id: int,
+    document_data: UploadedDocumentCreate,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Upload a document for a wrapped API"""
+    # Verify wrapped API exists and belongs to user
+    result = await db.execute(
+        select(WrappedAPI).where(
+            WrappedAPI.id == wrapped_api_id,
+            WrappedAPI.user_id == current_user.id
+        )
+    )
+    wrapped_api = result.scalar_one_or_none()
+    
+    if not wrapped_api:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Wrapped API not found or not owned by user"
+        )
+    
+    # Create document
+    document = UploadedDocument(
+        wrapped_api_id=wrapped_api_id,
+        filename=document_data.filename,
+        file_type=document_data.file_type,
+        mime_type=document_data.mime_type,
+        file_size=document_data.file_size,
+        content=document_data.content
+    )
+    
+    db.add(document)
+    await db.commit()
+    await db.refresh(document)
+    
+    return UploadedDocumentResponse.model_validate(document)
+
+
+@router.get("/{wrapped_api_id}/documents", response_model=List[UploadedDocumentResponse])
+async def list_documents(
+    wrapped_api_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """List all uploaded documents for a wrapped API"""
+    # Verify wrapped API exists and belongs to user
+    result = await db.execute(
+        select(WrappedAPI).where(
+            WrappedAPI.id == wrapped_api_id,
+            WrappedAPI.user_id == current_user.id
+        )
+    )
+    wrapped_api = result.scalar_one_or_none()
+    
+    if not wrapped_api:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Wrapped API not found or not owned by user"
+        )
+    
+    # Get documents
+    documents_result = await db.execute(
+        select(UploadedDocument)
+        .where(UploadedDocument.wrapped_api_id == wrapped_api_id)
+        .order_by(UploadedDocument.created_at.desc())
+    )
+    documents = documents_result.scalars().all()
+    
+    return [UploadedDocumentResponse.model_validate(doc) for doc in documents]
+
+
+@router.delete("/{wrapped_api_id}/documents/{document_id}")
+async def delete_document(
+    wrapped_api_id: int,
+    document_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Delete an uploaded document"""
+    # Verify wrapped API exists and belongs to user
+    result = await db.execute(
+        select(WrappedAPI).where(
+            WrappedAPI.id == wrapped_api_id,
+            WrappedAPI.user_id == current_user.id
+        )
+    )
+    wrapped_api = result.scalar_one_or_none()
+    
+    if not wrapped_api:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Wrapped API not found or not owned by user"
+        )
+    
+    # Get document
+    doc_result = await db.execute(
+        select(UploadedDocument).where(
+            UploadedDocument.id == document_id,
+            UploadedDocument.wrapped_api_id == wrapped_api_id
+        )
+    )
+    document = doc_result.scalar_one_or_none()
+    
+    if not document:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found"
+        )
+    
+    await db.delete(document)
+    await db.commit()
+    
+    return {"message": "Document deleted successfully"}

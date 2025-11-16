@@ -12,11 +12,8 @@ class AuthService {
       console.log('Register payload:', payload);
       const response = await apiClient.post('/api/auth/register', payload);
       
-      if (response.access_token) {
-        apiClient.setToken(response.access_token);
-        localStorage.setItem('refresh_token', response.refresh_token);
-      }
-      
+      // Registration now returns a message, not tokens (email verification required)
+      // Tokens will be available after email verification
       return response;
     } catch (error) {
       // Extract error message from response if available

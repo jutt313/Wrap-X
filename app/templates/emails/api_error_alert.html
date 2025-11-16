@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>API Error Alert ⚠️</h1>
+<p>We detected an issue with your API configuration.</p>
+
+<div class="info-box" style="background: rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.3);">
+    <p><strong>Error Details:</strong></p>
+    <p style="margin-top: 10px;">• API: {{ api_name }}</p>
+    <p>• Error: {{ error_message }}</p>
+    <p>• Time: {{ error_time }}</p>
+</div>
+
+<p>This error may affect your API functionality. Please review your configuration and API keys.</p>
+
+<div style="text-align: center; margin: 30px 0;">
+    <a href="{{ frontend_url }}/dashboard" class="button">View Dashboard</a>
+</div>
+
+<p>Common causes:</p>
+<ul style="margin: 20px 0; padding-left: 25px; color: rgba(255, 255, 255, 0.85);">
+    <li style="margin: 10px 0;">Invalid or expired API keys</li>
+    <li style="margin: 10px 0;">Rate limit exceeded</li>
+    <li style="margin: 10px 0;">Network connectivity issues</li>
+    <li style="margin: 10px 0;">Service provider outage</li>
+</ul>
+
+<p>If the issue persists, please check your API provider's status or contact support at {{ support_email }}.</p>
+{% endblock %}
+

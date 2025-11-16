@@ -12,6 +12,9 @@ function Register() {
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [registeredEmail, setRegisteredEmail] = useState('');
+  const [resending, setResending] = useState(false);
   const { register } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -25,6 +28,31 @@ function Register() {
       ...formData,
       [e.target.name]: e.target.value
     });
+  };
+
+  const handleResendVerification = async () => {
+    setResending(true);
+    setError('');
+    try {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/auth/resend-verification`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email: registeredEmail }),
+      });
+      const data = await response.json();
+      if (response.ok) {
+        setError('');
+        alert('Verification email sent! Please check your inbox.');
+      } else {
+        setError(data.detail || 'Failed to resend verification email');
+      }
+    } catch (err) {
+      setError('Failed to resend verification email. Please try again.');
+    } finally {
+      setResending(false);
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -52,12 +80,15 @@ function Register() {
 
     try {
       console.log('Submitting registration:', { email: formData.email, hasPassword: !!formData.password });
-      await register(formData.email, formData.password, formData.name);
-      // Redirect back to the page they came from, or Welcome page
-      navigate(returnTo || from || '/', { replace: true });
+      const response = await register(formData.email, formData.password, formData.name);
+      // Show success message instead of redirecting
+      setSuccess(true);
+      setRegisteredEmail(formData.email);
+      setError('');
     } catch (err) {
       console.error('Registration error:', err);
       setError(err.message || 'Registration failed. Please try again.');
+      setSuccess(false);
     } finally {
       setLoading(false);
     }
@@ -72,14 +103,45 @@ function Register() {
 
       <div className="auth-content">
         <div className="mirror-card auth-card">
+          <div className="auth-logo-container">
+            <img src="/logo-full.png" alt="Wrap-X" className="auth-logo" />
+          </div>
           <h1 className="auth-title">
             Create <span className="gradient-text">Account</span>
           </h1>
           <p className="auth-subtitle">Join Wrap-X and customize your AI APIs</p>
 
           {error && <div className="error-message">{error}</div>}
+          {success && (
+            <div className="success-message">
+              <h3 style={{ marginBottom: '0.5rem', fontSize: '1rem' }}>Account Created Successfully! ✅</h3>
+              <p style={{ marginBottom: '0.5rem', fontSize: '0.85rem' }}>We've sent a confirmation email to <strong>{registeredEmail}</strong></p>
+              <p style={{ marginBottom: '0.5rem', fontSize: '0.8rem' }}>
+                Please check your inbox and click the verification link to activate your account.
+              </p>
+              <p style={{ marginTop: '0.5rem', fontSize: '0.8rem' }}>
+                Didn't receive the email?{' '}
+                <button
+                  type="button"
+                  onClick={handleResendVerification}
+                  disabled={resending}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'rgba(99, 102, 241, 0.9)',
+                    textDecoration: 'underline',
+                    cursor: 'pointer',
+                    fontSize: '0.8rem'
+                  }}
+                >
+                  {resending ? 'Sending...' : 'Resend verification email'}
+                </button>
+              </p>
+            </div>
+          )}
 
-          <form onSubmit={handleSubmit} className="auth-form">
+          {!success && (
+            <form onSubmit={handleSubmit} className="auth-form">
             <div className="form-group">
               <label htmlFor="name">Name (Optional)</label>
               <input
@@ -137,11 +199,18 @@ function Register() {
               {loading ? 'Creating Account...' : 'Create Account'}
             </button>
           </form>
+          )}
 
           <div className="auth-links">
-            <p>
-              Already have an account? <Link to="/login" state={location.state}>Sign In</Link>
-            </p>
+            {success ? (
+              <p>
+                <Link to="/login" state={location.state}>Go to Sign In</Link>
+              </p>
+            ) : (
+              <p>
+                Already have an account? <Link to="/login" state={location.state}>Sign In</Link>
+              </p>
+            )}
           </div>
         </div>
       </div>

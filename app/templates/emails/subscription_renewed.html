@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>Subscription Renewed</h1>
+<p>Your <strong>{{ plan_name }}</strong> subscription has been successfully renewed.</p>
+
+<div class="info-box">
+    <p><strong>Renewal Details:</strong></p>
+    <p style="margin-top: 10px;">• Plan: {{ plan_name }}</p>
+    <p>• Amount charged: ${{ amount }}</p>
+    <p>• Next renewal: {{ next_billing_date }}</p>
+</div>
+
+<p>Your subscription will continue automatically. You can manage your subscription anytime from your billing settings.</p>
+
+<div style="text-align: center; margin: 30px 0;">
+    <a href="{{ frontend_url }}/billing" class="button">Manage Subscription</a>
+</div>
+
+<p>Thank you for being a valued Wrap-X customer!</p>
+{% endblock %}
+

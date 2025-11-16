@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>Account Deletion Confirmation</h1>
+<p>Your Wrap-X account has been successfully deleted.</p>
+
+<div class="info-box">
+    <p><strong>What this means:</strong></p>
+    <p style="margin-top: 10px;">• All your data has been permanently removed</p>
+    <p>• Your projects and configurations have been deleted</p>
+    <p>• You will no longer receive emails from us</p>
+</div>
+
+<p>If you deleted your account by mistake, you can create a new account anytime. However, your previous data cannot be recovered.</p>
+
+<div style="text-align: center; margin: 30px 0;">
+    <a href="{{ frontend_url }}/register" class="button">Create New Account</a>
+</div>
+
+<p>We're sorry to see you go. If you have any feedback about your experience, we'd love to hear from you at {{ support_email }}.</p>
+
+<p>Thank you for using Wrap-X.</p>
+{% endblock %}
+

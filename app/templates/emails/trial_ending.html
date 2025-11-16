@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>Your Trial Ends Soon ⏰</h1>
+<p>Your Wrap-X free trial will end in <strong>1 day</strong>.</p>
+
+<div class="info-box">
+    <p><strong>Don't lose access to your projects!</strong></p>
+    <p style="margin-top: 10px;">Upgrade now to continue using all your configurations and deployed APIs.</p>
+</div>
+
+<p>Choose a plan that fits your needs:</p>
+<ul style="margin: 20px 0; padding-left: 25px; color: rgba(255, 255, 255, 0.85);">
+    <li style="margin: 10px 0;"><strong>Starter:</strong> $8.79/month - 1 wrap</li>
+    <li style="margin: 10px 0;"><strong>Professional:</strong> $19.89/month - 3 wraps</li>
+    <li style="margin: 10px 0;"><strong>Business:</strong> $49.99/month - 10 wraps</li>
+</ul>
+
+<div style="text-align: center; margin: 30px 0;">
+    <a href="{{ frontend_url }}/billing" class="button">Upgrade Now</a>
+</div>
+
+<p>After your trial ends, you'll need to upgrade to continue using Wrap-X. All your data and configurations will be preserved.</p>
+
+<p>Need help choosing a plan? Contact us at {{ support_email }}.</p>
+{% endblock %}
+

@@ -3,7 +3,7 @@ from fastapi.responses import JSONResponse
 from typing import Optional
 import stripe
 import logging
-from datetime import timedelta
+from datetime import timedelta, datetime
 
 from app.database import AsyncSessionLocal
 from app.auth.dependencies import get_current_user
@@ -25,7 +25,9 @@ from app.services.billing_service import (
     TRIAL_DAYS,
 )
 from app.services.notification_service import create_notification
+from app.services.email_service import email_service
 from app.config import settings
+from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
 
@@ -163,12 +165,59 @@ async def stripe_webhook(request: Request):
             elif event_type == "customer.subscription.created":
                 # Subscription created
                 subscription_id = event_data["id"]
-                await update_subscription_from_stripe(subscription_id, db)
+                billing = await update_subscription_from_stripe(subscription_id, db)
+                if billing and billing.user_id:
+                    # Get user
+                    from app.models.user import User
+                    result = await db.execute(select(User).where(User.id == billing.user_id))
+                    user = result.scalar_one_or_none()
+                    if user:
+                        # Send subscription activated email
+                        try:
+                            plan_name = PLANS.get(billing.plan_type, {}).get("name", billing.plan_type.title())
+                            email_service.send_template_email(
+                                to_email=user.email,
+                                template_name="subscription_activated.html",
+                                subject="Your Wrap-X Subscription is Active!",
+                                context={
+                                    "user_name": user.name or "User",
+                                    "plan_name": plan_name,
+                                    "amount": billing.amount,
+                                    "next_billing_date": billing.stripe_current_period_end.strftime("%B %d, %Y") if billing.stripe_current_period_end else "N/A",
+                                    "to_email": user.email
+                                }
+                            )
+                        except Exception as e:
+                            logger.error(f"Failed to send subscription activated email: {e}")
             
             elif event_type == "customer.subscription.updated":
-                # Subscription updated (plan change, etc.)
+                # Subscription updated (plan change, renewal, etc.)
                 subscription_id = event_data["id"]
-                await update_subscription_from_stripe(subscription_id, db)
+                billing = await update_subscription_from_stripe(subscription_id, db)
+                if billing and billing.user_id and event_data.get("status") == "active":
+                    # Get user
+                    from app.models.user import User
+                    result = await db.execute(select(User).where(User.id == billing.user_id))
+                    user = result.scalar_one_or_none()
+                    if user:
+                        # Check if this is a renewal (subscription was already active)
+                        # Send subscription renewed email
+                        try:
+                            plan_name = PLANS.get(billing.plan_type, {}).get("name", billing.plan_type.title())
+                            email_service.send_template_email(
+                                to_email=user.email,
+                                template_name="subscription_renewed.html",
+                                subject="Your Wrap-X Subscription Has Been Renewed",
+                                context={
+                                    "user_name": user.name or "User",
+                                    "plan_name": plan_name,
+                                    "amount": billing.amount,
+                                    "next_billing_date": billing.stripe_current_period_end.strftime("%B %d, %Y") if billing.stripe_current_period_end else "N/A",
+                                    "to_email": user.email
+                                }
+                            )
+                        except Exception as e:
+                            logger.error(f"Failed to send subscription renewed email: {e}")
             
             elif event_type == "customer.subscription.deleted":
                 # Subscription canceled
@@ -177,6 +226,27 @@ async def stripe_webhook(request: Request):
                 if billing:
                     billing.status = "cancelled"
                     await db.commit()
+                    # Send cancellation email
+                    if billing.user_id:
+                        from app.models.user import User
+                        result = await db.execute(select(User).where(User.id == billing.user_id))
+                        user = result.scalar_one_or_none()
+                        if user:
+                            try:
+                                plan_name = PLANS.get(billing.plan_type, {}).get("name", billing.plan_type.title())
+                                email_service.send_template_email(
+                                    to_email=user.email,
+                                    template_name="subscription_cancelled.html",
+                                    subject="Your Wrap-X Subscription Has Been Cancelled",
+                                    context={
+                                        "user_name": user.name or "User",
+                                        "plan_name": plan_name,
+                                        "access_end_date": billing.stripe_current_period_end.strftime("%B %d, %Y") if billing.stripe_current_period_end else "N/A",
+                                        "to_email": user.email
+                                    }
+                                )
+                            except Exception as e:
+                                logger.error(f"Failed to send subscription cancelled email: {e}")
             
             elif event_type == "invoice.payment_succeeded":
                 # Payment succeeded
@@ -193,6 +263,26 @@ async def stripe_webhook(request: Request):
                             message=f"Your payment of ${event_data.get('amount_paid', 0) / 100:.2f} has been processed successfully.",
                             metadata={"invoice_id": event_data.get("id"), "amount": event_data.get("amount_paid", 0) / 100}
                         )
+                        # Send payment succeeded email
+                        from app.models.user import User
+                        result = await db.execute(select(User).where(User.id == billing.user_id))
+                        user = result.scalar_one_or_none()
+                        if user:
+                            try:
+                                email_service.send_template_email(
+                                    to_email=user.email,
+                                    template_name="payment_succeeded.html",
+                                    subject="Payment Successful - Wrap-X",
+                                    context={
+                                        "user_name": user.name or "User",
+                                        "amount": event_data.get('amount_paid', 0) / 100,
+                                        "payment_date": datetime.fromtimestamp(event_data.get('created', 0)).strftime("%B %d, %Y"),
+                                        "transaction_id": event_data.get("id", "N/A"),
+                                        "to_email": user.email
+                                    }
+                                )
+                            except Exception as e:
+                                logger.error(f"Failed to send payment succeeded email: {e}")
             
             elif event_type == "invoice.payment_failed":
                 # Payment failed
@@ -211,6 +301,25 @@ async def stripe_webhook(request: Request):
                             message=f"Your payment of ${event_data.get('amount_due', 0) / 100:.2f} could not be processed. Please update your payment method.",
                             metadata={"invoice_id": event_data.get("id"), "amount": event_data.get("amount_due", 0) / 100}
                         )
+                        # Send payment failed email
+                        from app.models.user import User
+                        result = await db.execute(select(User).where(User.id == billing.user_id))
+                        user = result.scalar_one_or_none()
+                        if user:
+                            try:
+                                email_service.send_template_email(
+                                    to_email=user.email,
+                                    template_name="payment_failed.html",
+                                    subject="Payment Failed - Wrap-X",
+                                    context={
+                                        "user_name": user.name or "User",
+                                        "amount": event_data.get('amount_due', 0) / 100,
+                                        "service_end_date": billing.stripe_current_period_end.strftime("%B %d, %Y") if billing.stripe_current_period_end else "N/A",
+                                        "to_email": user.email
+                                    }
+                                )
+                            except Exception as e:
+                                logger.error(f"Failed to send payment failed email: {e}")
         
         return JSONResponse(status_code=200, content={"received": True})
     except Exception as e:

@@ -26,4 +26,11 @@ wheels/
 alembic/versions/*.pyc
 *.db
 *.sqlite
+.DS_Store
+node_modules/
+frontend/dist/
+frontend/.vite/
+*.log
+.env.local
+.env.production
 

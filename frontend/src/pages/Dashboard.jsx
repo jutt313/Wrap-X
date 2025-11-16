@@ -197,18 +197,17 @@ function Dashboard() {
       {/* Header */}
       <div className="dashboard-header">
         <div className="dashboard-header-left">
+          <img src="/logo-icon.png" alt="Wrap-X" className="dashboard-logo" />
           <div className="dashboard-welcome">
             Welcome, <span className="username">{user?.name || user?.email?.split('@')[0] || 'User'}</span>
           </div>
         </div>
         <div className="dashboard-header-right">
-          <div className="dashboard-header-actions">
-            <NotificationDropdown />
-            <ProfileDropdown user={user} />
-          </div>
           <button className="wrap-x-button" onClick={() => setShowCreateWrap(true)}>
             Wrap-X
           </button>
+          <NotificationDropdown />
+          <ProfileDropdown user={user} />
         </div>
       </div>
 

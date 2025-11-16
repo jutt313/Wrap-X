@@ -67,6 +67,8 @@ class WrappedAPIResponse(BaseModel):
     max_tokens: Optional[int] = None
     top_p: Optional[float] = None
     frequency_penalty: Optional[float] = None
+    web_search_enabled: bool = False
+    thinking_enabled: bool = False
     created_at: datetime
     updated_at: Optional[datetime] = None
     prompt_config: Optional[PromptConfigResponse] = None
@@ -77,6 +79,12 @@ class WrappedAPIResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class ToolsUpdateRequest(BaseModel):
+    """Schema for updating tool toggles"""
+    web_search_enabled: bool
+    thinking_enabled: bool
 
 
 class ChatConfigRequest(BaseModel):
