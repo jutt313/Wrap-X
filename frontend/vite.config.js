@@ -14,4 +14,18 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        // Ensure _redirects is copied to dist
+        assetFileNames: (assetInfo) => {
+          if (assetInfo.name === '_redirects') {
+            return '_redirects'
+          }
+          return assetInfo.name || 'assets/[name].[ext]'
+        }
+      }
+    }
+  },
+  publicDir: 'public',
 })
