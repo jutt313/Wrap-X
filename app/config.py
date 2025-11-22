@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
     openai_api_key: Optional[str] = None  # For chat command parsing
+    openai_model: str = "gpt-4o-mini"  # Model for chat command parsing (default: gpt-4o-mini)
     encryption_key: Optional[str] = None  # For encrypting/decrypting API keys
     
     # Stripe Configuration

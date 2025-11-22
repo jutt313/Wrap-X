@@ -5,7 +5,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi import status
 from app.database import async_engine, Base
 from app.routers import auth, dashboard, notifications, projects, billing
-from app.routers import llm_providers, wrapped_apis
+from app.routers import llm_providers, wrapped_apis, wrap_x
 from app.config import settings
 import app.models  # Import all models
 import logging
@@ -88,6 +88,7 @@ app.include_router(notifications.router)
 app.include_router(projects.router)
 app.include_router(llm_providers.router)
 app.include_router(wrapped_apis.router)
+app.include_router(wrap_x.router)  # Simplified /api/wrap-x/chat endpoint
 app.include_router(billing.router)
 
 

@@ -160,6 +160,15 @@
   font-size: 0.9rem;
   line-height: 1.6;
   word-wrap: break-word;
+  white-space: pre-wrap; /* preserve user newlines */
+}
+
+/* Add extra space between logical lines */
+.test-message-content .line {
+  margin: 0 0 0.4rem 0; /* one line gap */
+}
+.test-message-content .line:last-child {
+  margin-bottom: 0; /* avoid extra gap at end */
 }
 
 .test-message-content p {
@@ -201,6 +210,20 @@
   display: flex;
   align-items: center;
   gap: 4px;
+}
+
+/* Streaming caret */
+.stream-caret {
+  display: inline-block;
+  width: 8px;
+  height: 1em;
+  background: rgba(255, 255, 255, 0.8);
+  margin-left: 2px;
+  animation: blink 1s step-end infinite;
+}
+
+@keyframes blink {
+  50% { opacity: 0; }
 }
 
 .test-message .typing-dots {
@@ -375,4 +398,3 @@
   color: rgba(255, 255, 255, 0.6);
   font-size: 0.95rem;
 }
-

@@ -50,7 +50,16 @@ function VerifyEmail() {
       <div className="auth-content">
         <div className="mirror-card auth-card">
           <div className="auth-logo-container">
-            <img src="/logo-full.png" alt="Wrap-X" className="auth-logo" />
+            <img 
+              src="/logo-full.png" 
+              alt="Wrap-X" 
+              className="auth-logo"
+              onLoad={() => console.log('✅ VerifyEmail logo loaded:', '/logo-full.png')}
+              onError={(e) => {
+                console.error('❌ VerifyEmail logo failed:', '/logo-full.png');
+                console.error('Full URL:', e.target.src);
+              }}
+            />
           </div>
           
           {status === 'verifying' && (

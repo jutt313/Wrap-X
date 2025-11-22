@@ -92,6 +92,16 @@
   max-height: 90vh;
 }
 
+.api-key-create-modal .modal-header,
+.api-key-show-modal .modal-header {
+  border-bottom: none !important;
+}
+
+.api-key-create-modal .modal-footer,
+.api-key-show-modal .modal-footer {
+  border-top: none !important;
+}
+
 .api-key-create-modal .modal-body,
 .api-key-show-modal .modal-body {
   height: auto;

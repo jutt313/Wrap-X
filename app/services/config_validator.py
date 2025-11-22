@@ -10,6 +10,7 @@ from app.services.model_catalog import get_available_models
 
 logger = logging.getLogger(__name__)
 
+
 # Allowed fields for config updates
 ALLOWED_FIELDS = {
     "role",
@@ -28,14 +29,25 @@ ALLOWED_FIELDS = {
     "web_search",
     "web_search_triggers",
     "tools",
+    # Extended fields for richer config (not all persisted yet)
+    "purpose",
+    "where",
+    "who",
+    "structure",
+    "length",
+    "docs_data",
+    "constraints",
+    "errors",
+    "access_versioning",
+    "config_status",
     "response_message",  # AI-generated response, not a config field but allowed
     "error",  # AI-generated error, not a config field but allowed
 }
 
 # Enum validations
 VALID_TONES = {"Casual", "Professional", "Friendly", "Direct", "Technical", "Supportive"}
-VALID_THINKING_MODES = {"always", "conditional", "off"}
-VALID_WEB_SEARCH_MODES = {"always", "conditional", "off"}
+VALID_THINKING_MODES = {"always", "conditional", "off", "brief", "detailed"}
+VALID_WEB_SEARCH_MODES = {"always", "conditional", "off", "never", "only_if_asked", "when_unsure_or_latest", "often"}
 
 # Range validations
 FIELD_RANGES = {
@@ -51,6 +63,50 @@ class ValidationError(Exception):
     def __init__(self, details: List[Dict[str, Any]]):
         self.details = details
         super().__init__("Validation failed")
+
+
+def _normalize_examples_text(text: str) -> str:
+    """
+    Attempt to normalize examples into numbered `1. Q: ... A: ...` format.
+    """
+    if not text:
+        return text
+    
+    lines = [line.strip() for line in text.splitlines()]
+    candidates: List[str] = []
+    current_block: List[str] = []
+    
+    for line in lines:
+        if not line:
+            if current_block:
+                candidates.append(" ".join(current_block).strip())
+                current_block = []
+            continue
+        
+        if re.match(r"^\d+\.", line) or line.upper().startswith("Q:"):
+            if current_block:
+                candidates.append(" ".join(current_block).strip())
+                current_block = []
+        current_block.append(line)
+    
+    if current_block:
+        candidates.append(" ".join(current_block).strip())
+    
+    qa_blocks = [block for block in candidates if "Q:" in block and "A:" in block]
+    if not qa_blocks:
+        return text
+    
+    normalized_lines: List[str] = []
+    for idx, block in enumerate(qa_blocks, start=1):
+        block = re.sub(r"^\d+\.\s*", "", block).strip()
+        if not block.upper().startswith("Q:"):
+            block = f"Q: {block}"
+        if "A:" not in block:
+            # Skip entries without answers
+            continue
+        normalized_lines.append(f"{idx}. {block.strip()}")
+    
+    return "\n".join(normalized_lines) if normalized_lines else text
 
 
 def validate_config_updates(
@@ -75,16 +131,15 @@ def validate_config_updates(
     errors: List[Dict[str, Any]] = []
     cleaned: Dict[str, Any] = {}
     
-    # Check for unknown fields
+    # Drop unknown fields instead of failing validation (be lenient to parser)
     unknown_fields = set(parsed.keys()) - ALLOWED_FIELDS
     if unknown_fields:
-        for field in unknown_fields:
-            errors.append({
-                "field": field,
-                "value": parsed[field],
-                "message": f"Unknown field '{field}' is not allowed",
-                "valid_fields": sorted(ALLOWED_FIELDS - {"response_message", "error"})
-            })
+        try:
+            for field in list(unknown_fields):
+                logger.warning(f"Dropping unknown config field: {field}")
+                parsed.pop(field, None)
+        except Exception:
+            pass
     
     # Validate each allowed field
     for field in ALLOWED_FIELDS:
@@ -99,15 +154,52 @@ def validate_config_updates(
         
         # Validate enum fields
         if field == "tone":
-            if value not in VALID_TONES:
+            # Accept a single tone or up to two tones combined (e.g., "Friendly + Direct", "Friendly, Direct")
+            def _normalize_tone_string(raw: str) -> str:
+                # Replace common separators with comma, then split
+                s = str(raw)
+                # Normalize separators: +, /, |, ' and '
+                for sep in ["+", "/", "|", "&"]:
+                    s = s.replace(sep, ",")
+                s = s.replace(" and ", ",")
+                # Split, strip, title-case tokens
+                parts = [p.strip() for p in s.split(",") if p.strip()]
+                tokens = []
+                for p in parts:
+                    t = p.lower().strip()
+                    if not t:
+                        continue
+                    t = t.capitalize() if t != "ip" else t  # generic title-case; special-case if ever needed
+                    # Map common lowercase to canonical case
+                    mapping = {
+                        "casual": "Casual",
+                        "professional": "Professional",
+                        "friendly": "Friendly",
+                        "direct": "Direct",
+                        "technical": "Technical",
+                        "supportive": "Supportive",
+                    }
+                    canon = mapping.get(t.lower(), t)
+                    if canon in VALID_TONES and canon not in tokens:
+                        tokens.append(canon)
+                    # Cap at two tones
+                    if len(tokens) >= 2:
+                        break
+                return ", ".join(tokens)
+
+            normalized = _normalize_tone_string(value)
+            if not normalized:
                 errors.append({
                     "field": field,
                     "value": value,
-                    "message": f"Tone must be one of: {', '.join(sorted(VALID_TONES))}",
+                    "message": (
+                        "Tone must be one of: " + ", ".join(sorted(VALID_TONES)) +
+                        "; optionally combine up to two (e.g., 'Friendly + Direct')."
+                    ),
                     "valid_values": sorted(VALID_TONES)
                 })
             else:
-                cleaned[field] = value
+                cleaned[field] = normalized
                 
         elif field == "thinking_mode":
             if value not in VALID_THINKING_MODES:
@@ -118,7 +210,13 @@ def validate_config_updates(
                     "valid_values": sorted(VALID_THINKING_MODES)
                 })
             else:
-                cleaned[field] = value
+                # Normalize brief/detailed to internal values
+                normalized = value
+                if value == "brief":
+                    normalized = "conditional"
+                elif value == "detailed":
+                    normalized = "always"
+                cleaned[field] = normalized
                 
         elif field == "web_search":
             if value not in VALID_WEB_SEARCH_MODES:
@@ -129,7 +227,14 @@ def validate_config_updates(
                     "valid_values": sorted(VALID_WEB_SEARCH_MODES)
                 })
             else:
-                cleaned[field] = value
+                # Normalize external labels to internal values
+                mapping = {
+                    "never": "off",
+                    "only_if_asked": "conditional",
+                    "when_unsure_or_latest": "conditional",
+                    "often": "always",
+                }
+                cleaned[field] = mapping.get(value, value)
         
         # Validate numeric ranges
         elif field in FIELD_RANGES:
@@ -174,8 +279,9 @@ def validate_config_updates(
             else:
                 cleaned[field] = value
         
-        # Validate string fields (role, instructions, rules, behavior, examples, thinking_focus, web_search_triggers)
-        elif field in {"role", "instructions", "rules", "behavior", "examples", "thinking_focus", "web_search_triggers"}:
+        # Validate string fields (role, instructions, rules, behavior, examples, thinking_focus, web_search_triggers, and extended fields)
+        elif field in {"role", "instructions", "rules", "behavior", "examples", "thinking_focus", "web_search_triggers",
+                       "purpose", "where", "who", "structure", "length", "docs_data", "constraints", "errors", "access_versioning", "config_status"}:
             if not isinstance(value, str):
                 errors.append({
                     "field": field,
@@ -186,18 +292,24 @@ def validate_config_updates(
             else:
                 # Additional validation for examples: should be numbered
                 if field == "examples" and value:
-                    # Check if examples are numbered (basic check)
-                    lines = value.strip().split("\n")
-                    numbered_count = sum(1 for line in lines if line.strip() and (line.strip()[0].isdigit() or line.strip().startswith("-")))
-                    if numbered_count < 5:  # At least 5 examples should be numbered
+                    # Handle list case - convert to string
+                    if isinstance(value, list):
+                        value = "\n".join(str(item) for item in value)
+                    # Ensure it's a string
+                    if not isinstance(value, str):
+                        value = str(value) if value else ""
+                    normalized_examples = _normalize_examples_text(value)
+                    lines = [line.strip() for line in normalized_examples.split("\n") if line.strip()]
+                    numbered_count = sum(1 for line in lines if re.match(r"^\d+\.", line))
+                    if numbered_count < 5:
                         errors.append({
                             "field": field,
-                            "value": value[:100] + "..." if len(value) > 100 else value,
-                            "message": "Examples should be numbered (1., 2., 3., etc.) and contain at least 5 examples",
-                            "suggestion": "Format examples as numbered list: '1. Q: ... A: ...\\n2. Q: ... A: ...'"
+                            "value": (normalized_examples[:100] + "...") if len(normalized_examples) > 100 else normalized_examples,
+                            "message": "Examples should contain at least 5 numbered entries formatted like '1. Q: ... A: ...'",
+                            "suggestion": "Provide at least five Q/A pairs and ensure each begins with a number (e.g., '1. Q: ... A: ...')."
                         })
                     else:
-                        cleaned[field] = value
+                        cleaned[field] = normalized_examples
                 else:
                     cleaned[field] = value
         
@@ -343,4 +455,3 @@ def sanitize_chat_logs(logs: List[Dict[str, Any]], max_logs: int = 5, max_messag
             sanitized.append(sanitized_log)
     
     return sanitized
-

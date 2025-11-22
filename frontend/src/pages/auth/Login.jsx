@@ -41,6 +41,28 @@ function Login() {
     }
   };
 
+  // Debug: Log logo path on mount
+  useEffect(() => {
+    console.log('🔍 Login page mounted - checking logo path:', '/logo-full.png');
+    console.log('Base URL:', window.location.origin);
+    console.log('Full logo URL would be:', window.location.origin + '/logo-full.png');
+    
+    // Try to fetch the logo to see if it exists
+    fetch('/logo-full.png')
+      .then(res => {
+        if (res.ok) {
+          console.log('✅ Logo file exists and is accessible (status:', res.status, ')');
+          console.log('Content-Type:', res.headers.get('content-type'));
+          console.log('Content-Length:', res.headers.get('content-length'), 'bytes');
+        } else {
+          console.error('❌ Logo file returned status:', res.status, res.statusText);
+        }
+      })
+      .catch(err => {
+        console.error('❌ Error fetching logo:', err);
+      });
+  }, []);
+
   return (
     <div className="auth-container login-container">
       <div className="auth-background">
@@ -51,7 +73,29 @@ function Login() {
       <div className="auth-content">
         <div className="mirror-card auth-card">
           <div className="auth-logo-container">
-            <img src="/logo-full.png" alt="Wrap-X" className="auth-logo" />
+            <img 
+              src="/logo-full.png" 
+              alt="Wrap-X" 
+              className="auth-logo"
+              onLoad={() => {
+                console.log('✅ Login logo loaded successfully:', '/logo-full.png');
+                const img = document.querySelector('.auth-logo');
+                if (img) {
+                  console.log('Logo dimensions:', img.naturalWidth, 'x', img.naturalHeight);
+                  console.log('Logo visible:', img.offsetWidth > 0 && img.offsetHeight > 0);
+                  console.log('Logo display style:', window.getComputedStyle(img).display);
+                  console.log('Logo visibility:', window.getComputedStyle(img).visibility);
+                  console.log('Logo opacity:', window.getComputedStyle(img).opacity);
+                }
+              }}
+              onError={(e) => {
+                console.error('❌ Login logo failed to load:', '/logo-full.png');
+                console.error('Error event:', e);
+                console.error('Image element:', e.target);
+                console.error('Attempted src:', e.target.src);
+                console.error('Full URL:', e.target.src);
+              }}
+            />
           </div>
           <h1 className="auth-title">
             Welcome <span className="gradient-text">Back</span>

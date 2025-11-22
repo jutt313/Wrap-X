@@ -1,55 +1,88 @@
 /* Create Wrap Modal Styles */
 
-.create-wrap-modal {
-  width: 600px;
-  max-width: 90vw;
-  height: auto !important;
-  max-height: 90vh;
+/* Override the global .modal-card sizing just for this modal */
+.modal-card.create-wrap-modal {
+  width: 100%;
+  max-width: 420px; /* slimmer modal */
+  height: auto;     /* natural height based on content */
+  max-height: 85vh; /* avoid exceeding viewport height */
+  min-height: unset;
+  animation: modalGlowIn 0.3s ease-out;
+}
+
+@media (max-width: 520px) {
+  .modal-card.create-wrap-modal {
+    max-width: 92vw; /* responsive on small screens */
+  }
+}
+
+@keyframes modalGlowIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.95);
+    box-shadow: 0 0 0 rgba(59, 130, 246, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 30px 80px rgba(0,0,0,0.55), 0 0 60px rgba(59,130,246,0.4);
+  }
+}
+
+.create-wrap-modal .modal-header {
+  border-bottom: none !important;
+  padding: 1.25rem 1.25rem 0.75rem 1.25rem;
 }
 
 .create-wrap-modal .modal-body {
-  padding: 1rem 1.25rem;
+  padding: 0.75rem 1.25rem 1rem 1.25rem;
   height: auto;
   min-height: auto;
+}
+
+.create-wrap-modal .modal-footer {
+  border-top: none !important;
+  padding: 0.75rem 1.25rem 1.25rem 1.25rem;
 }
 
 .create-wrap-form {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 0.85rem; /* tidy vertical rhythm */
   padding: 0;
 }
 
 .create-wrap-form .form-group {
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
+  gap: 0.35rem;
 }
 
 .create-wrap-form .form-group label {
   color: rgba(255, 255, 255, 0.9);
-  font-weight: 500;
-  font-size: 0.85rem;
+  font-weight: 600;
+  font-size: 0.84rem;
   margin-bottom: 0;
 }
 
 .create-wrap-form .form-group input,
 .create-wrap-form .form-group select {
   width: 100%;
-  padding: 0.5rem 0.75rem;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.05);
+  padding: 0.55rem 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.04);
   color: #fff;
   font-size: 0.9rem;
-  transition: border-color 0.2s ease;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
 }
 
 .create-wrap-form .form-group input:focus,
 .create-wrap-form .form-group select:focus {
   border-color: #3B82F6;
   outline: none;
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.25);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .create-wrap-form .form-group select option {
@@ -58,7 +91,7 @@
 }
 
 .create-wrap-form .form-hint {
-  font-size: 0.75rem;
+  font-size: 0.76rem;
   color: rgba(255, 255, 255, 0.6);
   margin-top: 0.15rem;
 }
@@ -84,8 +117,8 @@
   background: rgba(239, 68, 68, 0.1);
   border-radius: 8px;
   border: 1px solid rgba(239, 68, 68, 0.3);
-  margin-top: -0.25rem;
-  margin-bottom: 0;
+  margin-top: 0.25rem;
+  margin-bottom: 0.25rem;
 }
 
 .loading-state {
@@ -96,4 +129,3 @@
   color: rgba(255, 255, 255, 0.8);
   font-size: 0.95rem;
 }
-

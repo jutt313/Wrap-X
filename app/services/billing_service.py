@@ -20,19 +20,19 @@ PLANS = {
     "starter": {
         "name": "Starter",
         "price": 8.79,
-        "wraps": 1,
+        "wraps": 3,
         "price_id": settings.stripe_price_starter,
     },
     "professional": {
         "name": "Professional",
         "price": 19.89,
-        "wraps": 3,
+        "wraps": 10,
         "price_id": settings.stripe_price_professional,
     },
     "business": {
         "name": "Business",
         "price": 49.99,
-        "wraps": 10,
+        "wraps": 31,
         "price_id": settings.stripe_price_business,
     },
 }
@@ -203,6 +203,38 @@ async def get_user_subscription(user: User, db: AsyncSession) -> Optional[Billin
     except Exception as e:
         logger.error(f"Error getting user subscription: {e}")
         return None
+
+
+async def check_wrap_limit(user: User, db: AsyncSession) -> bool:
+    """Check if user has reached their wrap limit based on subscription"""
+    try:
+        # Get current subscription
+        subscription = await get_user_subscription(user, db)
+        
+        # Default to starter plan if no subscription found (shouldn't happen due to trial)
+        plan_type = subscription.plan_type if subscription else "starter"
+        
+        # Get limit for plan
+        plan_data = PLANS.get(plan_type, PLANS["starter"])
+        limit = plan_data["wraps"]
+        
+        # Count existing active wraps
+        # We only count active wraps towards the limit
+        from app.models.wrapped_api import WrappedAPI
+        result = await db.execute(
+            select(func.count(WrappedAPI.id))
+            .where(
+                WrappedAPI.user_id == user.id,
+                WrappedAPI.is_active == True
+            )
+        )
+        current_count = result.scalar() or 0
+        
+        return current_count < limit
+    except Exception as e:
+        logger.error(f"Error checking wrap limit: {e}")
+        # Fail safe: allow creation if check fails, but log error
+        return True
 
 
 async def update_subscription_from_stripe(

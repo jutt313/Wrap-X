@@ -17,7 +17,10 @@ class WrappedAPIUpdate(BaseModel):
     """Schema for updating a wrapped API"""
     name: Optional[str] = Field(None, min_length=1, max_length=100)
     is_active: Optional[bool] = None
-    thinking_mode: Optional[str] = Field(None, pattern="^(always_on|always_off|custom)$")
+    thinking_mode: Optional[str] = Field(None, pattern="^(always|conditional|off)$")
+    thinking_focus: Optional[str] = None
+    web_search: Optional[str] = Field(None, pattern="^(always|conditional|off)$")
+    web_search_triggers: Optional[str] = None
     model: Optional[str] = None
     temperature: Optional[float] = Field(None, ge=0.0, le=2.0)
     max_tokens: Optional[int] = Field(None, gt=0)
@@ -62,11 +65,14 @@ class WrappedAPIResponse(BaseModel):
     endpoint_id: str
     is_active: bool
     thinking_mode: Optional[str] = None
+    thinking_focus: Optional[str] = None
     model: Optional[str] = None
     temperature: Optional[float] = None
     max_tokens: Optional[int] = None
     top_p: Optional[float] = None
     frequency_penalty: Optional[float] = None
+    web_search: Optional[str] = None
+    web_search_triggers: Optional[str] = None
     web_search_enabled: bool = False
     thinking_enabled: bool = False
     created_at: datetime
@@ -126,6 +132,7 @@ class ChatMessageRequest(BaseModel):
     """Schema for chat request - accepts either message or messages for flexibility"""
     message: Optional[str] = Field(None, description="Single message string (for internal testing)")
     messages: Optional[List[Dict[str, str]]] = Field(None, description="List of messages (OpenAI-compatible format)")
+    endpoint_id: Optional[str] = Field(None, description="Optional endpoint_id for authenticated users testing (not needed for external API calls with API key)")
     model: Optional[str] = None
     temperature: Optional[float] = None
     max_tokens: Optional[int] = None

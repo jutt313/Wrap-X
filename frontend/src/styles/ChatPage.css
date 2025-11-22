@@ -109,35 +109,30 @@ body:has(.chat-page) {
   font-size: 0.9rem;
 }
 
-/* Back Button in Header */
+/* Back Button in Header - Icon Only */
 .back-button-header {
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 50%; /* Fully rounded (circular) */
-  width: 40px; /* Fixed size for icon button */
-  height: 40px;
+  background: none;
+  border: none;
   padding: 0;
-  color: rgba(255, 255, 255, 0.9);
+  width: auto;
+  height: auto;
   cursor: pointer;
-  transition: all 0.3s ease;
   display: flex;
   align-items: center;
   justify-content: center;
-  position: relative;
 }
 
 .back-button-header svg {
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   stroke-width: 2;
+  color: rgba(255, 255, 255, 0.8); /* Normal white/gray color */
+  transition: all 0.3s ease;
 }
 
-.back-button-header:hover {
-  background: rgba(59, 130, 246, 0.3); /* Blue glow color */
-  border-color: rgba(59, 130, 246, 0.6);
-  box-shadow: 0 0 15px rgba(59, 130, 246, 0.5), 0 0 25px rgba(59, 130, 246, 0.3); /* Glow effect */
-  transform: scale(1.05);
-  color: rgba(255, 255, 255, 1);
+.back-button-header:hover svg {
+  color: rgba(255, 255, 255, 1); /* Brighter white on hover */
+  filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.5)); /* White glow effect */
 }
 
 /* Header Buttons Right Container */
@@ -147,224 +142,187 @@ body:has(.chat-page) {
   gap: 0.75rem;
 }
 
-/* Config Button in Header */
+/* Config Button in Header - Icon Only */
 .config-button-header {
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 50%; /* Circular by default */
-  width: 40px; /* Icon only size */
-  height: 40px;
+  background: none;
+  border: none;
   padding: 0;
-  color: rgba(255, 255, 255, 0.9);
+  width: auto;
+  height: auto;
   cursor: pointer;
-  transition: all 0.3s ease;
   display: flex;
   align-items: center;
   justify-content: center;
-  position: relative;
-  overflow: hidden;
 }
 
 .config-button-header .config-icon {
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   stroke-width: 2;
+  color: rgba(255, 255, 255, 0.8); /* Normal white/gray color */
   transition: all 0.3s ease;
 }
 
 .config-button-header .config-text {
-  display: none; /* Hidden by default */
-  white-space: nowrap;
-  margin-left: 0.5rem;
-  font-weight: 500;
-  font-size: 0.85rem;
-  transition: all 0.3s ease;
-}
-
-.config-button-header:hover {
-  border-radius: 20px; /* Rounded pill on hover */
-  width: auto; /* Expand width on hover */
-  padding: 0 1rem; /* Add horizontal padding */
-  background: rgba(34, 197, 94, 0.3); /* Green glow color */
-  border-color: rgba(34, 197, 94, 0.6);
-  box-shadow: 0 0 15px rgba(34, 197, 94, 0.5), 0 0 25px rgba(34, 197, 94, 0.3); /* Green glow effect */
-  transform: scale(1.05);
-  color: rgba(255, 255, 255, 1);
-}
-
-.config-button-header:hover .config-text {
-  display: inline-block; /* Show text on hover */
-  animation: fadeIn 0.3s ease;
+  display: none; /* Always hidden */
 }
 
 .config-button-header:hover .config-icon {
-  width: 18px; /* Slightly smaller on hover to fit text */
-  height: 18px;
+  color: #22C55E; /* Green color on hover */
+  filter: drop-shadow(0 0 8px rgba(34, 197, 94, 0.6)); /* Green glow effect */
 }
 
-/* API Key Button in Header */
-.api-key-button-header {
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 50%; /* Circular by default */
-  width: 40px; /* Icon only size */
-  height: 40px;
-  padding: 0;
+/* Settings Dropdown Container */
+.settings-dropdown-container {
+  position: relative;
+}
+
+.settings-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.98) 0%, rgba(30, 41, 59, 0.98) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 0.5rem;
+  min-width: 200px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+  animation: slideDown 0.2s ease;
+  backdrop-filter: blur(10px);
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.settings-dropdown-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
   color: rgba(255, 255, 255, 0.9);
+  font-size: 0.9rem;
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: all 0.2s ease;
+  text-align: left;
+}
+
+.settings-dropdown-item:hover {
+  background: rgba(99, 102, 241, 0.2);
+  color: rgba(255, 255, 255, 1);
+}
+
+.settings-dropdown-item svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 2;
+  color: rgba(99, 102, 241, 0.8);
+}
+
+.settings-dropdown-item:hover svg {
+  color: rgba(99, 102, 241, 1);
+}
+
+/* API Key Button in Header - Icon Only */
+.api-key-button-header {
+  background: none;
+  border: none;
+  padding: 0;
+  width: auto;
+  height: auto;
+  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  position: relative;
-  overflow: hidden;
 }
 
 .api-key-button-header .api-key-icon {
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   stroke-width: 2;
+  color: rgba(255, 255, 255, 0.8); /* Normal white/gray color */
   transition: all 0.3s ease;
 }
 
 .api-key-button-header .api-key-text {
-  display: none; /* Hidden by default */
-  white-space: nowrap;
-  margin-left: 0.5rem;
-  font-weight: 500;
-  font-size: 0.85rem;
-  transition: all 0.3s ease;
-}
-
-.api-key-button-header:hover {
-  border-radius: 20px; /* Rounded pill on hover */
-  width: auto; /* Expand width on hover */
-  padding: 0 1rem; /* Add horizontal padding */
-  background: rgba(139, 92, 246, 0.3); /* Purple glow color */
-  border-color: rgba(139, 92, 246, 0.6);
-  box-shadow: 0 0 15px rgba(139, 92, 246, 0.5), 0 0 25px rgba(139, 92, 246, 0.3); /* Purple glow effect */
-  transform: scale(1.05);
-  color: rgba(255, 255, 255, 1);
-}
-
-.api-key-button-header:hover .api-key-text {
-  display: inline-block; /* Show text on hover */
-  animation: fadeIn 0.3s ease;
+  display: none; /* Always hidden */
 }
 
 .api-key-button-header:hover .api-key-icon {
-  width: 18px; /* Slightly smaller on hover to fit text */
-  height: 18px;
+  color: #8B5CF6; /* Purple color on hover */
+  filter: drop-shadow(0 0 8px rgba(139, 92, 246, 0.6)); /* Purple glow effect */
 }
 
-/* Deploy Button in Header */
+/* Deploy Button in Header - Icon Only */
 .deploy-button-header {
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 50%; /* Circular by default */
-  width: 40px; /* Icon only size */
-  height: 40px;
+  background: none;
+  border: none;
   padding: 0;
-  color: rgba(255, 255, 255, 0.9);
+  width: auto;
+  height: auto;
   cursor: pointer;
-  transition: all 0.3s ease;
   display: flex;
   align-items: center;
   justify-content: center;
-  position: relative;
-  overflow: hidden;
 }
 
 .deploy-button-header .deploy-icon {
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   stroke-width: 2;
+  color: rgba(255, 255, 255, 0.8); /* Normal white/gray color */
   transition: all 0.3s ease;
 }
 
 .deploy-button-header .deploy-text {
-  display: none; /* Hidden by default */
-  white-space: nowrap;
-  margin-left: 0.5rem;
-  font-weight: 500;
-  font-size: 0.85rem;
-  transition: all 0.3s ease;
-}
-
-.deploy-button-header:hover {
-  border-radius: 20px; /* Rounded pill on hover */
-  width: auto; /* Expand width on hover */
-  padding: 0 1rem; /* Add horizontal padding */
-  background: rgba(249, 115, 22, 0.3); /* Orange glow color */
-  border-color: rgba(249, 115, 22, 0.6);
-  box-shadow: 0 0 15px rgba(249, 115, 22, 0.5), 0 0 25px rgba(249, 115, 22, 0.3); /* Orange glow effect */
-  transform: scale(1.05);
-  color: rgba(255, 255, 255, 1);
-}
-
-.deploy-button-header:hover .deploy-text {
-  display: inline-block; /* Show text on hover */
-  animation: fadeIn 0.3s ease;
+  display: none; /* Always hidden */
 }
 
 .deploy-button-header:hover .deploy-icon {
-  width: 18px; /* Slightly smaller on hover to fit text */
-  height: 18px;
+  color: #F97316; /* Orange color on hover */
+  filter: drop-shadow(0 0 8px rgba(249, 115, 22, 0.6)); /* Orange glow effect */
 }
 
-/* Documentation Button in Header */
+/* Documentation Button in Header - Icon Only */
 .documentation-button-header {
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 50%; /* Circular by default */
-  width: 40px; /* Icon only size */
-  height: 40px;
+  background: none;
+  border: none;
   padding: 0;
-  color: rgba(255, 255, 255, 0.9);
+  width: auto;
+  height: auto;
   cursor: pointer;
-  transition: all 0.3s ease;
   display: flex;
   align-items: center;
   justify-content: center;
-  position: relative;
-  overflow: hidden;
 }
 
 .documentation-button-header .documentation-icon {
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   stroke-width: 2;
+  color: rgba(255, 255, 255, 0.8); /* Normal white/gray color */
   transition: all 0.3s ease;
 }
 
 .documentation-button-header .documentation-text {
-  display: none; /* Hidden by default */
-  white-space: nowrap;
-  margin-left: 0.5rem;
-  font-weight: 500;
-  font-size: 0.85rem;
-  transition: all 0.3s ease;
-}
-
-.documentation-button-header:hover {
-  border-radius: 20px; /* Rounded pill on hover */
-  width: auto; /* Expand width on hover */
-  padding: 0 1rem; /* Add horizontal padding */
-  background: rgba(59, 130, 246, 0.3); /* Blue glow color */
-  border-color: rgba(59, 130, 246, 0.6);
-  box-shadow: 0 0 15px rgba(59, 130, 246, 0.5), 0 0 25px rgba(59, 130, 246, 0.3); /* Blue glow effect */
-  transform: scale(1.05);
-  color: rgba(255, 255, 255, 1);
-}
-
-.documentation-button-header:hover .documentation-text {
-  display: inline-block; /* Show text on hover */
-  animation: fadeIn 0.3s ease;
+  display: none; /* Always hidden */
 }
 
 .documentation-button-header:hover .documentation-icon {
-  width: 18px; /* Slightly smaller on hover to fit text */
-  height: 18px;
+  color: #3B82F6; /* Blue color on hover */
+  filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.6)); /* Blue glow effect */
 }
 
 @keyframes fadeIn {

@@ -134,7 +134,23 @@ function DemoDashboard() {
       {/* Header */}
       <div className="dashboard-header">
         <div className="dashboard-header-left">
-          <img src="/logo-icon.png" alt="Wrap-X" className="dashboard-logo" />
+          <img 
+            src="/logo-icon.png" 
+            alt="Wrap-X" 
+            className="dashboard-logo"
+            onLoad={() => {
+              console.log('✅ Demo Dashboard logo loaded successfully:', '/logo-icon.png');
+              const img = document.querySelector('.dashboard-logo');
+              if (img) {
+                console.log('Logo dimensions:', img.naturalWidth, 'x', img.naturalHeight);
+                console.log('Logo visible:', img.offsetWidth > 0 && img.offsetHeight > 0);
+              }
+            }}
+            onError={(e) => {
+              console.error('❌ Demo Dashboard logo failed to load:', '/logo-icon.png');
+              console.error('Attempted src:', e.target.src);
+            }}
+          />
           <div className="dashboard-welcome">
             Welcome, <span className="username">{user.name}</span>
           </div>

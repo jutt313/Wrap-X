@@ -7,6 +7,7 @@ function ConfigChat({ wrappedApiId, onConfigUpdate }) {
   const [inputValue, setInputValue] = useState('');
   const [loading, setLoading] = useState(false);
   const [initializing, setInitializing] = useState(true);
+  const [showCoderPane, setShowCoderPane] = useState(false);
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
 
@@ -49,6 +50,14 @@ function ConfigChat({ wrappedApiId, onConfigUpdate }) {
     const userMessage = inputValue.trim();
     setInputValue('');
     setLoading(true);
+    // Show mini coder animation while processing
+    setShowCoderPane(true);
+    // Auto-peek the panel briefly then collapse to tab (if still loading)
+    setTimeout(() => {
+      if (loading) {
+        setShowCoderPane(false);
+      }
+    }, 1200);
 
     // Add user message immediately
     const newMessage = {
@@ -72,15 +81,20 @@ function ConfigChat({ wrappedApiId, onConfigUpdate }) {
     try {
       const response = await chatService.sendConfigMessage(wrappedApiId, userMessage);
       
-      // Remove typing indicator and add actual response
-      setMessages(prev => {
-        const filtered = prev.filter(msg => msg.id !== typingMessage.id);
-        return filtered.map(msg => 
-          msg.id === newMessage.id 
-            ? { ...msg, response: response.response }
-            : msg
-        );
-      });
+      // Remove typing indicator and stream assistant response into the paired message
+      const full = response.response || '';
+      setMessages(prev => prev.filter(msg => msg.id !== typingMessage.id));
+      const speedMs = 18;
+      const chunkSize = 3;
+      let index = 0;
+      const interval = setInterval(() => {
+        index = Math.min(index + chunkSize, full.length);
+        const next = full.slice(0, index);
+        setMessages(prev => prev.map(m => m.id === newMessage.id ? { ...m, response: next, isStreaming: index < full.length } : m));
+        if (index >= full.length) {
+          clearInterval(interval);
+        }
+      }, speedMs);
 
       // Notify parent that config was updated (parent will reload wrapped API)
       if (onConfigUpdate) {
@@ -99,6 +113,7 @@ function ConfigChat({ wrappedApiId, onConfigUpdate }) {
       });
     } finally {
       setLoading(false);
+      setShowCoderPane(false);
     }
   };
 
@@ -109,20 +124,66 @@ function ConfigChat({ wrappedApiId, onConfigUpdate }) {
     }
   };
 
+  // Render message with smart line breaks for readability
   const formatMessage = (text) => {
-    if (!text) return '';
-    // Split by double newlines to create paragraphs, then split by single newlines for line breaks
-    return text.split(/\n\n+/).map((paragraph, idx) => (
-      <React.Fragment key={idx}>
-        {paragraph.split('\n').map((line, lineIdx) => (
-          <React.Fragment key={lineIdx}>
-            {line}
-            {lineIdx < paragraph.split('\n').length - 1 && <br />}
-          </React.Fragment>
-        ))}
-        {idx < text.split(/\n\n+/).length - 1 && <><br /><br /></>}
-      </React.Fragment>
-    ));
+    const t = text || '';
+    
+    // First, split by existing newlines
+    let paragraphs = t.split('\n').filter(p => p.trim());
+    
+    // For each paragraph, split by sentences (periods, question marks, exclamation marks)
+    const processedLines = [];
+    paragraphs.forEach((para, paraIdx) => {
+      // Split by sentence endings (. ? !) but keep the punctuation
+      const sentences = para.split(/([?.!])\s+/).filter(s => s.trim());
+      
+      let currentSentence = '';
+      sentences.forEach((part, idx) => {
+        if (part.match(/^[?.!]$/)) {
+          // This is punctuation - add it to current sentence
+          currentSentence += part;
+          if (currentSentence.trim()) {
+            processedLines.push({ 
+              type: 'sentence', 
+              text: currentSentence.trim(), 
+              key: `para-${paraIdx}-sent-${idx}` 
+            });
+          }
+          currentSentence = '';
+        } else {
+          currentSentence += (currentSentence ? ' ' : '') + part;
+        }
+      });
+      
+      // Add any remaining text
+      if (currentSentence.trim()) {
+        processedLines.push({ 
+          type: 'sentence', 
+          text: currentSentence.trim(), 
+          key: `para-${paraIdx}-final` 
+        });
+      }
+      
+      // Add spacer between paragraphs (except after last paragraph)
+      if (paraIdx < paragraphs.length - 1) {
+        processedLines.push({ type: 'spacer', key: `spacer-${paraIdx}` });
+      }
+    });
+    
+    return (
+      <>
+        {processedLines.map((item) => {
+          if (item.type === 'spacer') {
+            return <div key={item.key} className="message-spacer"></div>;
+          }
+          return (
+            <div key={item.key} className="message-line">
+              {item.text}
+            </div>
+          );
+        })}
+      </>
+    );
   };
 
   if (initializing) {
@@ -229,7 +290,7 @@ function ConfigChat({ wrappedApiId, onConfigUpdate }) {
               </div>
             ) : msg.response && (
               <div className={`message assistant-message ${msg.isError ? 'error' : ''} ${msg.isStatus ? 'status-message' : ''} ${msg.statusType ? `status-${msg.statusType}` : ''}`}>
-                <div className="message-content">{formatMessage(msg.response)}</div>
+                <div className="message-content">{formatMessage(msg.response)}{msg.isStreaming && <span className="stream-caret" />}</div>
               </div>
             )}
           </div>
@@ -237,6 +298,39 @@ function ConfigChat({ wrappedApiId, onConfigUpdate }) {
         <div ref={messagesEndRef} />
       </div>
       
+      {/* Coding-in-progress mini tab and panel */}
+      {loading && (
+        <>
+          <button
+            type="button"
+            className="coder-tab"
+            aria-label="Show coding progress"
+            onClick={() => setShowCoderPane(prev => !prev)}
+          >
+            <span className="coder-dot" />
+            <span>Coding…</span>
+          </button>
+          {showCoderPane && (
+            <div className="coder-panel">
+              <div className="coder-header">
+                <span className="coder-title">Building your wrap</span>
+                <button
+                  className="coder-close"
+                  aria-label="Close"
+                  onClick={() => setShowCoderPane(false)}
+                >×</button>
+              </div>
+              <div className="coder-body">
+                <div className="coder-line" style={{ animationDelay: '0s' }}>Analyzing use case<span className="coder-caret"/></div>
+                <div className="coder-line" style={{ animationDelay: '0.3s' }}>Generating configuration fields…</div>
+                <div className="coder-line" style={{ animationDelay: '0.6s' }}>Validating model & parameters…</div>
+                <div className="coder-line" style={{ animationDelay: '0.9s' }}>Updating role/instructions/rules…</div>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
       <div className="chat-input-wrapper">
         <div className="chat-input-container">
           <textarea
@@ -265,4 +359,3 @@ function ConfigChat({ wrappedApiId, onConfigUpdate }) {
 }
 
 export default ConfigChat;
-

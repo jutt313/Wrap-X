@@ -59,10 +59,10 @@ function Landing() {
   useEffect(() => {
     const handleScroll = () => setScrollY(window.scrollY);
     const handleMouseMove = (e) => setMousePosition({ x: e.clientX, y: e.clientY });
-    
+
     window.addEventListener('scroll', handleScroll);
     window.addEventListener('mousemove', handleMouseMove);
-    
+
     return () => {
       window.removeEventListener('scroll', handleScroll);
       window.removeEventListener('mousemove', handleMouseMove);
@@ -74,7 +74,7 @@ function Landing() {
     const interval = setInterval(() => {
       setCurrentHeadline((prev) => (prev + 1) % headlines.length);
     }, 5000);
-    
+
     return () => clearInterval(interval);
   }, [headlines.length]);
 
@@ -124,7 +124,7 @@ function Landing() {
 
     function animate() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      
+
       particles.forEach((particle, i) => {
         particle.update();
         particle.draw();
@@ -188,28 +188,28 @@ function Landing() {
       {/* Hero Section with Particle Background */}
       <section className="hero-modern">
         <canvas ref={canvasRef} className="particle-canvas"></canvas>
-        
+
         <div className="hero-content-modern">
           <div className="hero-badge-modern" key={`badge-${currentHeadline}`}>
             <div className="badge-dot"></div>
             <span>{headlines[currentHeadline].badge}</span>
           </div>
-          
+
           <h1 className="hero-title-modern" key={`title-${currentHeadline}`}>
             {headlines[currentHeadline].title}
             <br />
             <span className="gradient-text-modern">{headlines[currentHeadline].subtitle}</span>
           </h1>
-          
+
           <p className="hero-subtitle-modern">
             Connect any LLM provider. Add tools. Deploy in minutes.
             <br />
             Your perfect AI API, wrapped and ready.
           </p>
-          
+
           <div className="hero-cta-modern">
-            <button 
-              className="cta-primary-modern magnetic-btn" 
+            <button
+              className="cta-primary-modern magnetic-btn"
               onClick={() => navigate('/register')}
               style={{
                 transform: `translate(${(mousePosition.x - window.innerWidth / 2) * 0.01}px, ${(mousePosition.y - window.innerHeight / 2) * 0.01}px)`
@@ -218,8 +218,8 @@ function Landing() {
               <span className="btn-text">Start Building Free</span>
               <span className="btn-shimmer"></span>
             </button>
-            <button 
-              className="cta-secondary-modern" 
+            <button
+              className="cta-secondary-modern"
               onClick={() => navigate('/login')}
             >
               <span>Sign In</span>
@@ -229,19 +229,19 @@ function Landing() {
           <div className="hero-features-modern">
             <div className="feature-pill">
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <path d="M13.3333 4L6 11.3333L2.66666 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M13.3333 4L6 11.3333L2.66666 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
               <span>No credit card required</span>
             </div>
             <div className="feature-pill">
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <path d="M13.3333 4L6 11.3333L2.66666 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M13.3333 4L6 11.3333L2.66666 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
               <span>100+ LLM providers</span>
             </div>
             <div className="feature-pill">
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <path d="M13.3333 4L6 11.3333L2.66666 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M13.3333 4L6 11.3333L2.66666 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
               <span>Deploy in &lt; 5 minutes</span>
             </div>
@@ -262,7 +262,7 @@ function Landing() {
           <h2 className="section-title-modern">Monitor Everything</h2>
           <p className="section-subtitle-modern">Real-time analytics and insights</p>
         </div>
-        
+
         <div className="dashboard-demo-wrapper" data-scroll>
           <div className="dashboard-frame">
             <DemoDashboard />
@@ -276,15 +276,15 @@ function Landing() {
           <h2 className="section-title-modern">Build & Test Your AI</h2>
           <p className="section-subtitle-modern">Configure through conversation, test instantly</p>
         </div>
-        
+
         <div className="chat-demos-wrapper" data-scroll>
           <div className="chat-demo-split">
             <div className="chat-demo-panel">
               <div className="chat-demo-header">
                 <div className="chat-demo-tab active">
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                    <path d="M8 4V8L10 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-                    <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="2"/>
+                    <path d="M8 4V8L10 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                    <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="2" />
                   </svg>
                   <span>Configuration Chat</span>
                 </div>
@@ -293,12 +293,12 @@ function Landing() {
                 <DemoConfigChat />
               </div>
             </div>
-            
+
             <div className="chat-demo-panel">
               <div className="chat-demo-header">
                 <div className="chat-demo-tab active">
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                    <path d="M14 7L8 2L2 7M3 6V13C3 13.5523 3.44772 14 4 14H12C12.5523 14 13 13.5523 13 13V6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                    <path d="M14 7L8 2L2 7M3 6V13C3 13.5523 3.44772 14 4 14H12C12.5523 14 13 13.5523 13 13V6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                   <span>Test Chat</span>
                 </div>
@@ -324,12 +324,12 @@ function Landing() {
             <div className="bento-card-inner">
               <div className="bento-icon-large">
                 <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
-                  <path d="M24 44C35.0457 44 44 35.0457 44 24C44 12.9543 35.0457 4 24 4C12.9543 4 4 12.9543 4 24C4 35.0457 12.9543 44 24 44Z" stroke="url(#grad1)" strokeWidth="2"/>
-                  <path d="M24 16V24L28 28" stroke="url(#grad1)" strokeWidth="2" strokeLinecap="round"/>
+                  <path d="M24 44C35.0457 44 44 35.0457 44 24C44 12.9543 35.0457 4 24 4C12.9543 4 4 12.9543 4 24C4 35.0457 12.9543 44 24 44Z" stroke="url(#grad1)" strokeWidth="2" />
+                  <path d="M24 16V24L28 28" stroke="url(#grad1)" strokeWidth="2" strokeLinecap="round" />
                   <defs>
                     <linearGradient id="grad1" x1="4" y1="4" x2="44" y2="44">
-                      <stop offset="0%" stopColor="#6366F1"/>
-                      <stop offset="100%" stopColor="#8B5CF6"/>
+                      <stop offset="0%" stopColor="#6366F1" />
+                      <stop offset="100%" stopColor="#8B5CF6" />
                     </linearGradient>
                   </defs>
                 </svg>
@@ -355,12 +355,12 @@ function Landing() {
             <div className="bento-card-inner">
               <div className="bento-icon">
                 <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-                  <path d="M16 4L4 10L16 16L28 10L16 4Z" stroke="url(#grad2)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                  <path d="M4 22L16 28L28 22" stroke="url(#grad2)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M16 4L4 10L16 16L28 10L16 4Z" stroke="url(#grad2)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M4 22L16 28L28 22" stroke="url(#grad2)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                   <defs>
                     <linearGradient id="grad2" x1="4" y1="4" x2="28" y2="28">
-                      <stop offset="0%" stopColor="#3B82F6"/>
-                      <stop offset="100%" stopColor="#06B6D4"/>
+                      <stop offset="0%" stopColor="#3B82F6" />
+                      <stop offset="100%" stopColor="#06B6D4" />
                     </linearGradient>
                   </defs>
                 </svg>
@@ -376,11 +376,11 @@ function Landing() {
             <div className="bento-card-inner">
               <div className="bento-icon">
                 <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-                  <path d="M8 12H24M8 16H24M6 28H26C27.1046 28 28 27.1046 28 26V6C28 4.89543 27.1046 4 26 4H6C4.89543 4 4 4.89543 4 6V26C4 27.1046 4.89543 28 6 28Z" stroke="url(#grad3)" strokeWidth="2"/>
+                  <path d="M8 12H24M8 16H24M6 28H26C27.1046 28 28 27.1046 28 26V6C28 4.89543 27.1046 4 26 4H6C4.89543 4 4 4.89543 4 6V26C4 27.1046 4.89543 28 6 28Z" stroke="url(#grad3)" strokeWidth="2" />
                   <defs>
                     <linearGradient id="grad3" x1="4" y1="4" x2="28" y2="28">
-                      <stop offset="0%" stopColor="#8B5CF6"/>
-                      <stop offset="100%" stopColor="#EC4899"/>
+                      <stop offset="0%" stopColor="#8B5CF6" />
+                      <stop offset="100%" stopColor="#EC4899" />
                     </linearGradient>
                   </defs>
                 </svg>
@@ -397,8 +397,8 @@ function Landing() {
             <div className="bento-card-inner">
               <div className="bento-icon-small">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                  <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z" stroke="#10B981" strokeWidth="2"/>
-                  <path d="M8 12L11 15L16 9" stroke="#10B981" strokeWidth="2" strokeLinecap="round"/>
+                  <path d="M12 22C17.5228 22 22 17.5228 22 12C22 6.47715 17.5228 2 12 2C6.47715 2 2 6.47715 2 12C2 17.5228 6.47715 22 12 22Z" stroke="#10B981" strokeWidth="2" />
+                  <path d="M8 12L11 15L16 9" stroke="#10B981" strokeWidth="2" strokeLinecap="round" />
                 </svg>
               </div>
               <h3 className="bento-title-small">Production Ready</h3>
@@ -409,8 +409,8 @@ function Landing() {
             <div className="bento-card-inner">
               <div className="bento-icon-small">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                  <path d="M12 8V16M8 12H16" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round"/>
-                  <rect x="2" y="2" width="20" height="20" rx="4" stroke="#F59E0B" strokeWidth="2"/>
+                  <path d="M12 8V16M8 12H16" stroke="#F59E0B" strokeWidth="2" strokeLinecap="round" />
+                  <rect x="2" y="2" width="20" height="20" rx="4" stroke="#F59E0B" strokeWidth="2" />
                 </svg>
               </div>
               <h3 className="bento-title-small">Real-Time Testing</h3>
@@ -421,7 +421,7 @@ function Landing() {
             <div className="bento-card-inner">
               <div className="bento-icon-small">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                  <path d="M14 2H6C5.46957 2 4.96086 2.21071 4.58579 2.58579C4.21071 2.96086 4 3.46957 4 4V20C4 20.5304 4.21071 21.0391 4.58579 21.4142C4.96086 21.7893 5.46957 22 6 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V8L14 2Z" stroke="#3B82F6" strokeWidth="2"/>
+                  <path d="M14 2H6C5.46957 2 4.96086 2.21071 4.58579 2.58579C4.21071 2.96086 4 3.46957 4 4V20C4 20.5304 4.21071 21.0391 4.58579 21.4142C4.96086 21.7893 5.46957 22 6 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V8L14 2Z" stroke="#3B82F6" strokeWidth="2" />
                 </svg>
               </div>
               <h3 className="bento-title-small">Document Upload</h3>
@@ -441,7 +441,7 @@ function Landing() {
           <div className="comparison-side traditional">
             <div className="comparison-badge traditional-badge">Traditional Way</div>
             <h3 className="comparison-title">Days of Coding</h3>
-            
+
             <div className="comparison-steps">
               <div className="comparison-step">
                 <div className="step-marker">1</div>
@@ -449,15 +449,15 @@ function Landing() {
                   <strong>Write boilerplate code</strong>
                   <div className="code-block-small">
                     <code>
-                      import openai<br/>
-                      from flask import Flask, request<br/>
-                      <br/>
-                      app = Flask(__name__)<br/>
-                      client = openai.OpenAI()<br/>
-                      <br/>
-                      @app.route('/chat')<br/>
-                      def chat():<br/>
-                      &nbsp;&nbsp;# 50+ lines of code...<br/>
+                      import openai<br />
+                      from flask import Flask, request<br />
+                      <br />
+                      app = Flask(__name__)<br />
+                      client = openai.OpenAI()<br />
+                      <br />
+                      @app.route('/chat')<br />
+                      def chat():<br />
+                      &nbsp;&nbsp;# 50+ lines of code...<br />
                     </code>
                   </div>
                 </div>
@@ -519,7 +519,7 @@ function Landing() {
           <div className="comparison-side wrapx">
             <div className="comparison-badge wrapx-badge">Wrap-X Way</div>
             <h3 className="comparison-title">Minutes to Production</h3>
-            
+
             <div className="comparison-steps">
               <div className="comparison-step">
                 <div className="step-marker">1</div>
@@ -575,12 +575,12 @@ function Landing() {
           <div className="journey-step" data-scroll>
             <div className="journey-icon">
               <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
-                <circle cx="24" cy="24" r="20" stroke="url(#gradStep1)" strokeWidth="2"/>
-                <path d="M18 24H30M24 18V30" stroke="url(#gradStep1)" strokeWidth="2" strokeLinecap="round"/>
+                <circle cx="24" cy="24" r="20" stroke="url(#gradStep1)" strokeWidth="2" />
+                <path d="M18 24H30M24 18V30" stroke="url(#gradStep1)" strokeWidth="2" strokeLinecap="round" />
                 <defs>
                   <linearGradient id="gradStep1" x1="4" y1="4" x2="44" y2="44">
-                    <stop offset="0%" stopColor="#6366F1"/>
-                    <stop offset="100%" stopColor="#8B5CF6"/>
+                    <stop offset="0%" stopColor="#6366F1" />
+                    <stop offset="100%" stopColor="#8B5CF6" />
                   </linearGradient>
                 </defs>
               </svg>
@@ -600,19 +600,19 @@ function Landing() {
 
           <div className="journey-arrow" data-scroll>
             <svg width="60" height="24" viewBox="0 0 60 24" fill="none">
-              <path d="M0 12H56M56 12L46 2M56 12L46 22" stroke="rgba(99, 102, 241, 0.3)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M0 12H56M56 12L46 2M56 12L46 22" stroke="rgba(99, 102, 241, 0.3)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </div>
 
           <div className="journey-step" data-scroll>
             <div className="journey-icon">
               <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
-                <circle cx="24" cy="24" r="20" stroke="url(#gradStep2)" strokeWidth="2"/>
-                <path d="M16 20L20 24L32 14" stroke="url(#gradStep2)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                <circle cx="24" cy="24" r="20" stroke="url(#gradStep2)" strokeWidth="2" />
+                <path d="M16 20L20 24L32 14" stroke="url(#gradStep2)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 <defs>
                   <linearGradient id="gradStep2" x1="4" y1="4" x2="44" y2="44">
-                    <stop offset="0%" stopColor="#8B5CF6"/>
-                    <stop offset="100%" stopColor="#EC4899"/>
+                    <stop offset="0%" stopColor="#8B5CF6" />
+                    <stop offset="100%" stopColor="#EC4899" />
                   </linearGradient>
                 </defs>
               </svg>
@@ -631,19 +631,19 @@ function Landing() {
 
           <div className="journey-arrow" data-scroll>
             <svg width="60" height="24" viewBox="0 0 60 24" fill="none">
-              <path d="M0 12H56M56 12L46 2M56 12L46 22" stroke="rgba(139, 92, 246, 0.3)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M0 12H56M56 12L46 2M56 12L46 22" stroke="rgba(139, 92, 246, 0.3)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </div>
 
           <div className="journey-step" data-scroll>
             <div className="journey-icon">
               <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
-                <circle cx="24" cy="24" r="20" stroke="url(#gradStep3)" strokeWidth="2"/>
-                <path d="M24 16V24L28 28" stroke="url(#gradStep3)" strokeWidth="2" strokeLinecap="round"/>
+                <circle cx="24" cy="24" r="20" stroke="url(#gradStep3)" strokeWidth="2" />
+                <path d="M24 16V24L28 28" stroke="url(#gradStep3)" strokeWidth="2" strokeLinecap="round" />
                 <defs>
                   <linearGradient id="gradStep3" x1="4" y1="4" x2="44" y2="44">
-                    <stop offset="0%" stopColor="#EC4899"/>
-                    <stop offset="100%" stopColor="#10B981"/>
+                    <stop offset="0%" stopColor="#EC4899" />
+                    <stop offset="100%" stopColor="#10B981" />
                   </linearGradient>
                 </defs>
               </svg>
@@ -666,7 +666,7 @@ function Landing() {
           <button className="journey-cta-button" onClick={() => navigate('/register')}>
             Start Building Free
             <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-              <path d="M7.5 15L12.5 10L7.5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M7.5 15L12.5 10L7.5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
         </div>
@@ -812,31 +812,31 @@ function Landing() {
         <div className="pricing-grid-modern">
           <div className="pricing-card-modern" data-scroll>
             <div className="pricing-header-modern">
-              <h3 className="pricing-name-modern">Free</h3>
+              <h3 className="pricing-name-modern">Starter</h3>
               <div className="pricing-price-modern">
                 <span className="price-symbol">$</span>
-                <span className="price-amount">0</span>
+                <span className="price-amount">8.79</span>
                 <span className="price-period">/mo</span>
               </div>
             </div>
             <ul className="pricing-features-modern">
               <li>
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                  <path d="M16.6667 5L7.5 14.1667L3.33334 10" stroke="#10B981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M16.6667 5L7.5 14.1667L3.33334 10" stroke="#10B981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
                 1 Project
               </li>
               <li>
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                  <path d="M16.6667 5L7.5 14.1667L3.33334 10" stroke="#10B981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M16.6667 5L7.5 14.1667L3.33334 10" stroke="#10B981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
                 3 Wraps
               </li>
               <li>
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                  <path d="M16.6667 5L7.5 14.1667L3.33334 10" stroke="#10B981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M16.6667 5L7.5 14.1667L3.33334 10" stroke="#10B981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
-                1K requests/mo
+                Standard Support
               </li>
             </ul>
             <button className="pricing-btn-modern" onClick={() => navigate('/register')}>
@@ -847,37 +847,31 @@ function Landing() {
           <div className="pricing-card-modern pricing-featured" data-scroll>
             <div className="featured-badge-modern">Most Popular</div>
             <div className="pricing-header-modern">
-              <h3 className="pricing-name-modern">Pro</h3>
+              <h3 className="pricing-name-modern">Professional</h3>
               <div className="pricing-price-modern">
                 <span className="price-symbol">$</span>
-                <span className="price-amount">29</span>
+                <span className="price-amount">19.89</span>
                 <span className="price-period">/mo</span>
               </div>
             </div>
             <ul className="pricing-features-modern">
               <li>
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                  <path d="M16.6667 5L7.5 14.1667L3.33334 10" stroke="#10B981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M16.6667 5L7.5 14.1667L3.33334 10" stroke="#10B981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
                 Unlimited Projects
               </li>
               <li>
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                  <path d="M16.6667 5L7.5 14.1667L3.33334 10" stroke="#10B981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M16.6667 5L7.5 14.1667L3.33334 10" stroke="#10B981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
-                Unlimited Wraps
+                10 Wraps
               </li>
               <li>
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                  <path d="M16.6667 5L7.5 14.1667L3.33334 10" stroke="#10B981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M16.6667 5L7.5 14.1667L3.33334 10" stroke="#10B981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
-                100K requests/mo
-              </li>
-              <li>
-                <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                  <path d="M16.6667 5L7.5 14.1667L3.33334 10" stroke="#10B981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-                Priority support
+                Priority Support
               </li>
             </ul>
             <button className="pricing-btn-modern pricing-btn-featured" onClick={() => navigate('/register')}>
@@ -887,33 +881,35 @@ function Landing() {
 
           <div className="pricing-card-modern" data-scroll>
             <div className="pricing-header-modern">
-              <h3 className="pricing-name-modern">Enterprise</h3>
+              <h3 className="pricing-name-modern">Business</h3>
               <div className="pricing-price-modern">
-                <span className="price-amount-custom">Custom</span>
+                <span className="price-symbol">$</span>
+                <span className="price-amount">49.99</span>
+                <span className="price-period">/mo</span>
               </div>
             </div>
             <ul className="pricing-features-modern">
               <li>
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                  <path d="M16.6667 5L7.5 14.1667L3.33334 10" stroke="#10B981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M16.6667 5L7.5 14.1667L3.33334 10" stroke="#10B981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
-                Everything in Pro
+                Unlimited Projects
               </li>
               <li>
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                  <path d="M16.6667 5L7.5 14.1667L3.33334 10" stroke="#10B981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M16.6667 5L7.5 14.1667L3.33334 10" stroke="#10B981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
-                Custom limits
+                31 Wraps
               </li>
               <li>
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                  <path d="M16.6667 5L7.5 14.1667L3.33334 10" stroke="#10B981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M16.6667 5L7.5 14.1667L3.33334 10" stroke="#10B981" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
-                Dedicated support
+                Dedicated Support
               </li>
             </ul>
-            <button className="pricing-btn-modern" onClick={() => window.location.href = 'mailto:info@wrap-x.com'}>
-              Contact Sales
+            <button className="pricing-btn-modern" onClick={() => navigate('/register')}>
+              Get Started
             </button>
           </div>
         </div>
@@ -927,13 +923,13 @@ function Landing() {
           <p className="cta-subtitle-modern">
             Start building custom AI APIs today. No credit card required.
           </p>
-          <button 
+          <button
             className="cta-btn-large-modern magnetic-btn"
             onClick={() => navigate('/register')}
           >
             <span>Start Building Free</span>
             <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-              <path d="M7.5 15L12.5 10L7.5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M7.5 15L12.5 10L7.5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
         </div>

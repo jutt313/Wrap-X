@@ -43,6 +43,7 @@ from app.auth.dependencies import get_current_active_user
 from app.auth.utils import verify_token
 from app.services.chat_service import parse_chat_command, call_wrapped_llm
 from app.services.model_catalog import get_available_models
+from app.services.billing_service import check_wrap_limit
 from app.services.notification_service import create_notification
 from app.services.config_validator import validate_config_updates, sanitize_chat_logs, ValidationError
 from app.middleware.rate_limit import check_rate_limit
@@ -60,6 +61,26 @@ router = APIRouter(prefix="/api/wrapped-apis", tags=["wrapped_apis"])
 def generate_endpoint_id() -> str:
     """Generate unique endpoint ID"""
     return f"wrap_{uuid.uuid4().hex[:24]}"
+
+
+def _stringify_response(value) -> str:
+    """Safely convert any response payload to a string for DB storage and API.
+    - dict/list -> JSON string
+    - None -> empty string
+    - other -> str(value)
+    """
+    try:
+        if value is None:
+            return ""
+        if isinstance(value, (dict, list)):
+            return json.dumps(value, ensure_ascii=False)
+        return str(value)
+    except Exception:
+        # As a last resort
+        try:
+            return json.dumps({"value": repr(value)})
+        except Exception:
+            return ""
 
 
 def hash_api_key(api_key: str) -> str:
@@ -89,6 +110,9 @@ def get_current_config_snapshot(wrapped_api: WrappedAPI) -> dict:
         "tone": wrapped_api.prompt_config.tone if wrapped_api.prompt_config else None,
         "examples": wrapped_api.prompt_config.examples if wrapped_api.prompt_config else None,
         "thinking_mode": wrapped_api.thinking_mode,
+        "thinking_focus": getattr(wrapped_api, "thinking_focus", None),
+        "web_search": getattr(wrapped_api, "web_search", None),
+        "web_search_triggers": getattr(wrapped_api, "web_search_triggers", None),
         "model": wrapped_api.model,
         "temperature": wrapped_api.temperature,
         "max_tokens": wrapped_api.max_tokens,
@@ -105,6 +129,14 @@ async def create_wrapped_api(
 ):
     """Create a new wrapped API"""
     try:
+        # Check wrap limit
+        can_create = await check_wrap_limit(current_user, db)
+        if not can_create:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You have reached the wrap limit for your current plan. Please upgrade to create more wraps."
+            )
+
         # Verify provider belongs to user
         if wrapped_data.provider_id:
             provider_result = await db.execute(
@@ -206,11 +238,14 @@ async def create_wrapped_api(
             endpoint_id=new_wrapped_api.endpoint_id,
             is_active=new_wrapped_api.is_active,
             thinking_mode=new_wrapped_api.thinking_mode,
+            thinking_focus=getattr(new_wrapped_api, 'thinking_focus', None),
             model=new_wrapped_api.model,
             temperature=new_wrapped_api.temperature,
             max_tokens=new_wrapped_api.max_tokens,
             top_p=new_wrapped_api.top_p,
             frequency_penalty=new_wrapped_api.frequency_penalty,
+            web_search=getattr(new_wrapped_api, 'web_search', None),
+            web_search_triggers=getattr(new_wrapped_api, 'web_search_triggers', None),
             web_search_enabled=new_wrapped_api.web_search_enabled,
             thinking_enabled=new_wrapped_api.thinking_enabled,
             created_at=new_wrapped_api.created_at,
@@ -287,11 +322,14 @@ async def list_wrapped_apis(
                 endpoint_id=wa.endpoint_id,
                 is_active=wa.is_active,
                 thinking_mode=wa.thinking_mode,
+                thinking_focus=getattr(wa, 'thinking_focus', None),
                 model=wa.model,
                 temperature=wa.temperature,
                 max_tokens=wa.max_tokens,
                 top_p=wa.top_p,
                 frequency_penalty=wa.frequency_penalty,
+                web_search=getattr(wa, 'web_search', None),
+                web_search_triggers=getattr(wa, 'web_search_triggers', None),
                 web_search_enabled=wa.web_search_enabled,
                 thinking_enabled=wa.thinking_enabled,
                 created_at=wa.created_at,
@@ -374,11 +412,14 @@ async def get_wrapped_api(
         endpoint_id=wrapped_api.endpoint_id,
         is_active=wrapped_api.is_active,
         thinking_mode=wrapped_api.thinking_mode,
+        thinking_focus=getattr(wrapped_api, 'thinking_focus', None),
         model=wrapped_api.model,
         temperature=wrapped_api.temperature,
         max_tokens=wrapped_api.max_tokens,
         top_p=wrapped_api.top_p,
         frequency_penalty=wrapped_api.frequency_penalty,
+        web_search=getattr(wrapped_api, 'web_search', None),
+        web_search_triggers=getattr(wrapped_api, 'web_search_triggers', None),
         web_search_enabled=wrapped_api.web_search_enabled,
         thinking_enabled=wrapped_api.thinking_enabled,
         created_at=wrapped_api.created_at,
@@ -429,6 +470,10 @@ async def update_wrapped_api(
         wrapped_api.is_active = wrapped_data.is_active
     if wrapped_data.thinking_mode is not None:
         wrapped_api.thinking_mode = wrapped_data.thinking_mode
+        # Keep legacy toggle in sync
+        wrapped_api.thinking_enabled = wrapped_data.thinking_mode != 'off'
+    if hasattr(wrapped_data, 'thinking_focus') and wrapped_data.thinking_focus is not None:
+        wrapped_api.thinking_focus = wrapped_data.thinking_focus
     if wrapped_data.model is not None:
         wrapped_api.model = wrapped_data.model
     if wrapped_data.temperature is not None:
@@ -439,6 +484,11 @@ async def update_wrapped_api(
         wrapped_api.top_p = wrapped_data.top_p
     if wrapped_data.frequency_penalty is not None:
         wrapped_api.frequency_penalty = wrapped_data.frequency_penalty
+    if hasattr(wrapped_data, 'web_search') and wrapped_data.web_search is not None:
+        wrapped_api.web_search = wrapped_data.web_search
+        wrapped_api.web_search_enabled = wrapped_data.web_search != 'off'
+    if hasattr(wrapped_data, 'web_search_triggers') and wrapped_data.web_search_triggers is not None:
+        wrapped_api.web_search_triggers = wrapped_data.web_search_triggers
     
     wrapped_api.updated_at = datetime.utcnow()
     
@@ -634,6 +684,14 @@ async def send_config_chat_message(
             documents_info = []
 
         # Get current config for parsing
+        # Extract platform from instructions if it exists (format: "Platform: Zapier" or similar)
+        platform_from_instructions = None
+        if wrapped_api.prompt_config and wrapped_api.prompt_config.instructions:
+            import re
+            platform_match = re.search(r'(?i)platform[:\s]+([^\n,]+)', wrapped_api.prompt_config.instructions)
+            if platform_match:
+                platform_from_instructions = platform_match.group(1).strip()
+        
         current_config = {
             "role": wrapped_api.prompt_config.role if wrapped_api.prompt_config else None,
             "instructions": wrapped_api.prompt_config.instructions if wrapped_api.prompt_config else None,
@@ -641,6 +699,8 @@ async def send_config_chat_message(
             "behavior": wrapped_api.prompt_config.behavior if wrapped_api.prompt_config else None,
             "tone": wrapped_api.prompt_config.tone if wrapped_api.prompt_config else None,
             "examples": wrapped_api.prompt_config.examples if wrapped_api.prompt_config else None,
+            "response_format": getattr(wrapped_api.prompt_config, 'response_format', None) if wrapped_api.prompt_config else None,
+            "platform": platform_from_instructions,
             "thinking_mode": wrapped_api.thinking_mode,
             "model": wrapped_api.model,
             "temperature": wrapped_api.temperature,
@@ -670,7 +730,10 @@ async def send_config_chat_message(
         # Parse command
         logger.info(f"Parsing config chat message: user={current_user.id}, wrapped_api_id={wrapped_api_id}, message='{chat_request.message[:100]}...'")
         parsed = await parse_chat_command(chat_request.message, current_config, history=history_msgs)
-        logger.info(f"Parsed config chat message: parsed_updates={parsed}")
+        try:
+            logger.info("CFGCHAT parsed (truncated 1000): %s", json.dumps(parsed)[:1000])
+        except Exception:
+            logger.info(f"CFGCHAT parsed keys: {list(parsed.keys()) if isinstance(parsed, dict) else type(parsed)}")
         
         # Validate parsed updates with strict parsing
         try:
@@ -693,9 +756,19 @@ async def send_config_chat_message(
             parsed = validated_parsed
             
         except ValidationError as ve:
-            # Structured validation error
-            response_msg = parsed.get("response_message") or "Validation failed"
-            chat_message.response = response_msg
+            # Structured validation error - surface actual issues
+            error_messages = []
+            for err in ve.details:
+                field = err.get("field")
+                message = err.get("message", "Invalid value")
+                if field:
+                    error_messages.append(f"{field}: {message}")
+                else:
+                    error_messages.append(message)
+            if not error_messages:
+                error_messages = ["Validation failed"]
+            response_msg = "Validation failed: " + "; ".join(error_messages[:3])
+            chat_message.response = _stringify_response(response_msg)
             await db.commit()
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -711,11 +784,11 @@ async def send_config_chat_message(
             logger.warning(f"Config chat parse error: user={current_user.id}, wrapped_api_id={wrapped_api_id}, error={parsed.get('error')}")
             # Use the error message directly from AI, no hardcoded prefix
             response_msg = parsed['error']
-            chat_message.response = response_msg
+            chat_message.response = _stringify_response(response_msg)
             await db.commit()
             return ChatConfigResponse(
                 parsed_updates={},
-                response=response_msg,
+                response=_stringify_response(response_msg),
                 diff={},
                 requires_confirmation=False,
                 config_version=wrapped_api.config_version
@@ -726,8 +799,23 @@ async def send_config_chat_message(
         
         # Calculate new config (what it would be after updates)
         new_config_snapshot = old_config_snapshot.copy()
-        for key in ["role", "instructions", "rules", "behavior", "tone", "examples", 
-                    "thinking_mode", "model", "temperature", "max_tokens", "top_p", "frequency_penalty"]:
+        for key in [
+            "role",
+            "instructions",
+            "rules",
+            "behavior",
+            "tone",
+            "examples",
+            "thinking_mode",
+            "thinking_focus",
+            "web_search",
+            "web_search_triggers",
+            "model",
+            "temperature",
+            "max_tokens",
+            "top_p",
+            "frequency_penalty",
+        ]:
             if key in parsed and parsed[key] is not None:
                 new_config_snapshot[key] = parsed[key]
         
@@ -736,48 +824,173 @@ async def send_config_chat_message(
         
         # If apply=false, return preview only
         if not chat_request.apply:
-            response_msg = parsed.get("response_message") or parsed.get("error") or "Preview of changes"
-            chat_message.response = response_msg
+            response_msg = parsed.get("response_message") or parsed.get("error")
+            # If the parser didn't supply a response_message, build a short summary from the diff
+            if not response_msg:
+                if diff:
+                    changed = ", ".join([f"{k}" for k in list(diff.keys())[:8]])
+                    more = "…" if len(diff) > 8 else ""
+                    response_msg = f"Preview of changes: {changed}{more}"
+                else:
+                    response_msg = "Preview of changes"
+            chat_message.response = _stringify_response(response_msg)
+            logger.info(f"CFGCHAT preview response: {response_msg[:200] if isinstance(response_msg, str) else str(response_msg)[:200]}")
             await db.commit()
             return ChatConfigResponse(
                 parsed_updates=parsed,
-                response=response_msg,
+                response=_stringify_response(response_msg),
                 diff=diff,
                 requires_confirmation=True,
                 config_version=wrapped_api.config_version
             )
         
+        # Log what we're about to save
+        logger.info(f"💾 [Config Save] Starting to save config for wrapped_api_id={wrapped_api_id}")
+        logger.info(f"💾 [Config Save] Parsed fields available: {list(parsed.keys())}")
+        logger.info(f"💾 [Config Save] Critical fields check: role={'role' in parsed}, instructions={'instructions' in parsed}, model={'model' in parsed}")
+        
+        # CRITICAL FALLBACK: If AI didn't return critical fields but they exist in current_config, fill them
+        # This ensures Test Chat unlocks even if AI forgets to include them
+        critical_fields_filled = []
+        if "role" not in parsed or not parsed.get("role"):
+            if current_config.get("role"):
+                parsed["role"] = current_config["role"]
+                critical_fields_filled.append("role")
+                logger.warning(f"⚠️ [Config Save] AI didn't return 'role', filling from current_config: '{current_config['role'][:50]}...'")
+        
+        if "instructions" not in parsed or not parsed.get("instructions"):
+            if current_config.get("instructions"):
+                parsed["instructions"] = current_config["instructions"]
+                critical_fields_filled.append("instructions")
+                logger.warning(f"⚠️ [Config Save] AI didn't return 'instructions', filling from current_config: '{current_config['instructions'][:50]}...'")
+        
+        if "model" not in parsed or not parsed.get("model"):
+            if current_config.get("model"):
+                parsed["model"] = current_config["model"]
+                critical_fields_filled.append("model")
+                logger.warning(f"⚠️ [Config Save] AI didn't return 'model', filling from current_config: '{current_config['model']}'")
+        
+        if critical_fields_filled:
+            logger.info(f"✅ [Config Save] Filled missing critical fields from current_config: {critical_fields_filled}")
+        
         # Update prompt config
         if not wrapped_api.prompt_config:
+            logger.info(f"💾 [Config Save] Creating new PromptConfig for wrapped_api_id={wrapped_api_id}")
             wrapped_api.prompt_config = PromptConfig(wrapped_api_id=wrapped_api_id)
             db.add(wrapped_api.prompt_config)
+        else:
+            logger.info(f"💾 [Config Save] Using existing PromptConfig (id={wrapped_api.prompt_config.id})")
         
+        fields_saved = []
         if "role" in parsed:
+            old_role = wrapped_api.prompt_config.role
             wrapped_api.prompt_config.role = parsed["role"]
+            fields_saved.append(f"role: '{old_role}' -> '{parsed['role']}'")
+            logger.info(f"💾 [Config Save] Saved role: '{parsed['role'][:50]}...'")
+        else:
+            logger.warning(f"⚠️ [Config Save] role NOT in parsed - will not be saved")
+        
         if "instructions" in parsed:
+            old_instructions = wrapped_api.prompt_config.instructions
             wrapped_api.prompt_config.instructions = parsed["instructions"]
+            fields_saved.append(f"instructions: '{old_instructions[:30] if old_instructions else None}...' -> '{parsed['instructions'][:30]}...'")
+            logger.info(f"💾 [Config Save] Saved instructions: '{parsed['instructions'][:50]}...'")
+        else:
+            logger.warning(f"⚠️ [Config Save] instructions NOT in parsed - will not be saved")
+        
         if "rules" in parsed:
             wrapped_api.prompt_config.rules = parsed["rules"]
+            fields_saved.append("rules")
         if "behavior" in parsed:
             wrapped_api.prompt_config.behavior = parsed["behavior"]
+            fields_saved.append("behavior")
         if "tone" in parsed:
             wrapped_api.prompt_config.tone = parsed["tone"]
+            fields_saved.append("tone")
         if "examples" in parsed:
             wrapped_api.prompt_config.examples = parsed["examples"]
+            fields_saved.append("examples")
+        if "platform" in parsed:
+            # Store platform in instructions as "Platform: [value]" for now
+            # TODO: Add platform field to PromptConfig model in future migration
+            current_instructions = wrapped_api.prompt_config.instructions or ""
+            # Remove old platform line if exists
+            import re
+            current_instructions = re.sub(r'(?i)platform[:\s]+[^\n]+\n?', '', current_instructions)
+            # Add new platform line at the beginning
+            if parsed["platform"]:
+                platform_line = f"Platform: {parsed['platform']}\n\n"
+                wrapped_api.prompt_config.instructions = platform_line + current_instructions.strip()
+                fields_saved.append(f"platform: '{parsed['platform']}'")
+                logger.info(f"💾 [Config Save] Saved platform in instructions: '{parsed['platform']}'")
+        if "response_format" in parsed:
+            # Store response_format if PromptConfig model has this field
+            # For now, we'll add it to instructions if not already there
+            if hasattr(wrapped_api.prompt_config, 'response_format'):
+                wrapped_api.prompt_config.response_format = parsed["response_format"]
+                fields_saved.append("response_format")
+            else:
+                # Store in instructions as fallback
+                current_instructions = wrapped_api.prompt_config.instructions or ""
+                # Remove old response_format line if exists
+                import re
+                current_instructions = re.sub(r'(?i)response[_\s]?format[:\s]+[^\n]+\n?', '', current_instructions)
+                if parsed["response_format"]:
+                    format_line = f"Response Format: {parsed['response_format']}\n\n"
+                    wrapped_api.prompt_config.instructions = format_line + current_instructions.strip()
+                    fields_saved.append(f"response_format: '{parsed['response_format']}'")
         
         # Update wrapped API settings
         if "thinking_mode" in parsed:
             wrapped_api.thinking_mode = parsed["thinking_mode"]
+            fields_saved.append("thinking_mode")
+        if "thinking_focus" in parsed:
+            wrapped_api.thinking_focus = parsed["thinking_focus"]
+            fields_saved.append("thinking_focus")
+        if "web_search" in parsed:
+            wrapped_api.web_search = parsed["web_search"]
+            fields_saved.append("web_search")
+        if "web_search_triggers" in parsed:
+            wrapped_api.web_search_triggers = parsed["web_search_triggers"]
+            fields_saved.append("web_search_triggers")
         if "model" in parsed:
+            old_model = wrapped_api.model
             wrapped_api.model = parsed["model"]
+            fields_saved.append(f"model: '{old_model}' -> '{parsed['model']}'")
+            logger.info(f"💾 [Config Save] Saved model: '{parsed['model']}'")
+        else:
+            logger.warning(f"⚠️ [Config Save] model NOT in parsed - will not be saved")
+        
         if "temperature" in parsed:
             wrapped_api.temperature = parsed["temperature"]
+            fields_saved.append("temperature")
         if "max_tokens" in parsed:
             wrapped_api.max_tokens = parsed["max_tokens"]
+            fields_saved.append("max_tokens")
         if "top_p" in parsed:
             wrapped_api.top_p = parsed["top_p"]
+            fields_saved.append("top_p")
         if "frequency_penalty" in parsed:
             wrapped_api.frequency_penalty = parsed["frequency_penalty"]
+            fields_saved.append("frequency_penalty")
+        
+        logger.info(f"💾 [Config Save] Fields saved: {fields_saved}")
+        
+        # Check if critical fields are present after save
+        has_role_after = bool(wrapped_api.prompt_config.role and wrapped_api.prompt_config.role.strip())
+        has_instructions_after = bool(wrapped_api.prompt_config.instructions and wrapped_api.prompt_config.instructions.strip())
+        has_model_after = bool(wrapped_api.model and wrapped_api.model.strip())
+        
+        logger.info(f"✅ [Config Save] After save check - role: {has_role_after}, instructions: {has_instructions_after}, model: {has_model_after}")
+        
+        if not (has_role_after and has_instructions_after and has_model_after):
+            logger.error(f"❌ [Config Save] CRITICAL: Test Chat will be LOCKED! Missing: role={not has_role_after}, instructions={not has_instructions_after}, model={not has_model_after}")
+
+        # Sync legacy toggles for backward compatibility
+        if "thinking_mode" in parsed:
+            wrapped_api.thinking_enabled = parsed["thinking_mode"] != "off"
+        if "web_search" in parsed:
+            wrapped_api.web_search_enabled = parsed["web_search"] != "off"
         
         # Handle tools
         if "tools" in parsed and isinstance(parsed["tools"], list):
@@ -905,14 +1118,14 @@ async def send_config_chat_message(
         
         logger.info(f"Config updated for wrapped API {wrapped_api_id}: {response_msg[:100]}")
         
-        chat_message.response = response_msg
+        chat_message.response = _stringify_response(response_msg)
         await db.commit()
         
         logger.info(f"Config chat message processed: user={current_user.id}, wrapped_api_id={wrapped_api_id}, parsed_updates={parsed}, version={wrapped_api.config_version}")
         
         return ChatConfigResponse(
             parsed_updates=parsed,
-            response=response_msg,
+            response=_stringify_response(response_msg),
             diff=diff,
             requires_confirmation=False,
             config_version=wrapped_api.config_version
@@ -1014,7 +1227,7 @@ async def chat_with_wrapped_api(
     current_user: Optional[User] = Depends(lambda: None)  # Optional auth for internal testing
 ):
     """
-    Main chat endpoint - OpenAI compatible
+    Main chat endpoint - OpenAI compatible (legacy endpoint, kept for backward compatibility)
     For authenticated users: Can test their own wrapped API without API key
     For external users: Requires valid API key
     """
@@ -1305,7 +1518,7 @@ async def list_api_keys(
     return APIKeyListResponse(
         keys=keys_with_metadata,
         endpoint_id=wrapped_api.endpoint_id,
-        endpoint_url=f"/api/wrapped-apis/{wrapped_api.endpoint_id}/chat"
+        endpoint_url=f"/api/wrap-x/chat"  # New simplified endpoint
     )
 
 
@@ -1387,7 +1600,7 @@ async def create_api_key(
     return APIKeyResponse(
         api_key=api_key_plain,  # Return plain key only once
         endpoint_id=wrapped_api.endpoint_id,
-        endpoint_url=f"/api/wrapped-apis/{wrapped_api.endpoint_id}/chat",
+        endpoint_url=f"/api/wrap-x/chat",  # New simplified endpoint
         key_name=key_data.key_name
     )
 

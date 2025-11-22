@@ -123,6 +123,10 @@ function Documentation() {
       title: 'Thinking Mode',
       content: <ThinkingMode />
     },
+    'settings': {
+      title: 'Settings & Configuration',
+      content: <Settings />
+    },
     'billing': {
       title: 'Billing & Usage',
       content: <Billing />
@@ -222,6 +226,12 @@ function Documentation() {
               title="Thinking Mode" 
               id="thinking-mode"
               active={activeSection === 'thinking-mode'}
+              onClick={handleSectionClick}
+            />
+            <SidebarItem 
+              title="Settings & Configuration" 
+              id="settings"
+              active={activeSection === 'settings'}
               onClick={handleSectionClick}
             />
           </SidebarSection>
@@ -541,11 +551,12 @@ function WrappedAPIs() {
       <h2>Using Your Wrapped API</h2>
       <p>Once configured, you can:</p>
       <ol>
-        <li>Generate API keys for your wrapped API</li>
-        <li>Use the endpoint: <code>POST /api/wrap-x/chat</code></li>
+        <li>Generate API keys for your wrapped API (see <a href="#api-keys">API Keys</a>)</li>
+        <li>Use the simplified endpoint: <code>POST /api/wrap-x/chat</code></li>
         <li>Send requests with your API key in the Authorization header</li>
         <li>Receive responses from your custom AI assistant</li>
       </ol>
+      <p><strong>No endpoint_id needed!</strong> The API key automatically identifies which wrapped API to use.</p>
       <p>See the <a href="#api-reference">API Reference</a> for detailed endpoint documentation.</p>
 
       <h2>Managing Wrapped APIs</h2>
@@ -554,9 +565,51 @@ function WrappedAPIs() {
         <li>View all wrapped APIs on your Dashboard</li>
         <li>Edit configuration through the chat interface</li>
         <li>Test your wrapped API in the test chat panel</li>
+        <li>Configure settings (tools, test chat behavior, response format) via the Settings button</li>
         <li>View usage analytics and logs</li>
-        <li>Delete wrapped APIs (this also deletes associated API keys)</li>
+        <li>Delete wrapped APIs using the delete button in the Dashboard table (this also deletes associated API keys)</li>
       </ul>
+
+      <h2>Settings & Configuration</h2>
+      <p>
+        Each wrapped API has a <strong>Settings</strong> button in the top-right corner of the configuration page. 
+        Click it to access three configuration sections:
+      </p>
+
+      <h3>Tools Configurations</h3>
+      <ul>
+        <li><strong>Web Search</strong> - Toggle web search on/off for your wrapped API</li>
+        <li><strong>Thinking Mode</strong> - Toggle thinking/planning mode on/off</li>
+        <li><strong>File Upload</strong> - Upload documents that your AI can reference</li>
+      </ul>
+
+      <h3>Test Chat Configurations</h3>
+      <p>Configure how the Test Chat behaves to match how you'll use the API in your application:</p>
+      <ul>
+        <li><strong>Conversation History</strong>:
+          <ul>
+            <li><strong>All history</strong> - Send all previous messages with each request (maintains full context)</li>
+            <li><strong>Last N messages</strong> - Send only the last N messages (useful for token management)</li>
+          </ul>
+        </li>
+        <li><strong>Display Options</strong>:
+          <ul>
+            <li><strong>Show thinking process</strong> - Display the AI's planning/thinking steps</li>
+            <li><strong>Show web searching</strong> - Display when the AI searches the web</li>
+            <li><strong>Auto scroll to bottom</strong> - Automatically scroll to latest messages</li>
+          </ul>
+        </li>
+      </ul>
+      <p>
+        These settings help you simulate exactly how your wrapped API will behave in production, 
+        including how much conversation history is sent and what information is displayed to users.
+      </p>
+
+      <h3>Response Format</h3>
+      <p>
+        View your configured platform, response format, and API response structure. You can click 
+        "Update Format in Config Chat" to modify the response format through the configuration chat.
+      </p>
     </div>
   );
 }
@@ -624,6 +677,53 @@ function PromptConfiguration() {
         <li><strong>Supportive</strong> - Empathetic, patient, understanding</li>
         <li><strong>Casual</strong> - Informal, conversational</li>
       </ul>
+      <p>You can combine up to 2 tones (e.g., "Friendly + Direct").</p>
+
+      <h3>Platform/Integration</h3>
+      <p>
+        During configuration, you'll be asked where you plan to use your wrapped API. This helps determine the optimal response format:
+      </p>
+      <ul>
+        <li><strong>Backend App/API</strong> - For custom applications and APIs</li>
+        <li><strong>Zapier</strong> - For Zapier automation workflows</li>
+        <li><strong>Make.com</strong> - For Make.com (formerly Integromat) automations</li>
+        <li><strong>Shopify/WooCommerce</strong> - For e-commerce platforms</li>
+        <li><strong>WordPress/Webflow</strong> - For website builders</li>
+        <li><strong>Slack/Discord</strong> - For communication platforms</li>
+        <li><strong>CRM</strong> - For customer relationship management systems</li>
+        <li><strong>Custom</strong> - For other platforms or custom integrations</li>
+      </ul>
+      <p>
+        Based on your selection, Wrap-X will recommend platform-specific response formats. For custom apps, a default JSON format is suggested.
+      </p>
+
+      <h3>Response Format</h3>
+      <p>
+        Response format includes two aspects:
+      </p>
+      <ul>
+        <li><strong>Content Style</strong> - How information is presented:
+          <ul>
+            <li>Bullets - List format for easy scanning</li>
+            <li>Short - Concise, brief answers</li>
+            <li>Step-by-step - Detailed sequential instructions</li>
+            <li>Summary first - Key points upfront, details follow</li>
+            <li>With examples - Includes code or example outputs</li>
+          </ul>
+        </li>
+        <li><strong>Data Structure</strong> - The format of the response data:
+          <ul>
+            <li><strong>Plain Text</strong> - Simple text response</li>
+            <li><strong>JSON</strong> - Structured JSON object (recommended for APIs and custom apps)</li>
+            <li><strong>Array</strong> - Array format (useful for lists and collections)</li>
+            <li><strong>Python Code</strong> - Executable Python code</li>
+            <li><strong>Other</strong> - Custom format based on your needs</li>
+          </ul>
+        </li>
+      </ul>
+      <p>
+        The chat interface will ask about both aspects and recommend formats based on your selected platform. You can view and update the response format later in Settings.
+      </p>
 
       <h3>Examples</h3>
       <p>
@@ -637,12 +737,23 @@ function PromptConfiguration() {
       </p>
       <ol>
         <li>Describe what you want your AI to do</li>
-        <li>Answer the chat's questions about role, tone, model, etc.</li>
+        <li>Answer the chat's questions about:
+          <ul>
+            <li>Purpose and target users</li>
+            <li>Platform/Integration (where you'll use the wrap)</li>
+            <li>Role, tone, and rules</li>
+            <li>Response format (content style and data structure)</li>
+            <li>Model and temperature</li>
+            <li>Examples</li>
+          </ul>
+        </li>
         <li>The system automatically generates appropriate configuration</li>
         <li>Review and confirm when ready</li>
       </ol>
       <p>
-        The chat interface is conversational and will guide you through all necessary steps.
+        The chat interface is conversational and will guide you through all necessary steps. 
+        It asks one focused question at a time and infers information from your descriptions 
+        to minimize the number of questions needed.
       </p>
 
       <h2>Best Practices</h2>
@@ -790,13 +901,20 @@ function APIKeys() {
       <h2>Using Your API Key</h2>
       <p>Include your API key in the Authorization header of your requests:</p>
       <CodeBlock language="http">{`Authorization: Bearer YOUR_API_KEY_HERE`}</CodeBlock>
+      <p>
+        <strong>That's it!</strong> The API key automatically identifies which wrapped API to use. 
+        No endpoint ID needed in the URL.
+      </p>
       <p>Example using curl:</p>
-      <CodeBlock language="bash">{`curl -X POST https://api.wrap-x.com/api/wrapped-apis/YOUR_ENDPOINT_ID/chat \\
+      <CodeBlock language="bash">{`curl -X POST https://api.wrap-x.com/api/wrap-x/chat \\
   -H "Authorization: Bearer YOUR_API_KEY_HERE" \\
   -H "Content-Type: application/json" \\
   -d '{
     "message": "Hello, how can you help me?"
   }'`}</CodeBlock>
+      <p>
+        Just use your API key - the system automatically knows which wrapped API to use!
+      </p>
 
       <h2>Managing API Keys</h2>
       <p>You can:</p>
@@ -856,6 +974,7 @@ function APIReference() {
       <h2>Chat Endpoint</h2>
       <h3>POST /api/wrap-x/chat</h3>
       <p>Send a message to your wrapped API and receive a response.</p>
+      <p><strong>Note:</strong> The API key in the Authorization header automatically identifies which wrapped API to use. No endpoint_id needed in the URL!</p>
 
       <h4>Request</h4>
       <CodeBlock language="http">{`POST /api/wrap-x/chat
@@ -863,8 +982,19 @@ Authorization: Bearer YOUR_API_KEY_HERE
 Content-Type: application/json
 
 {
-  "message": "Hello, how can you help me?",
-  "conversation_id": "optional-conversation-id"
+  "message": "Hello, how can you help me?"
+}`}</CodeBlock>
+      <p>Or with conversation history (OpenAI-compatible format):</p>
+      <CodeBlock language="http">{`POST /api/wrap-x/chat
+Authorization: Bearer YOUR_API_KEY_HERE
+Content-Type: application/json
+
+{
+  "messages": [
+    {"role": "user", "content": "Hello!"},
+    {"role": "assistant", "content": "Hi there! How can I help?"},
+    {"role": "user", "content": "What can you do?"}
+  ]
 }`}</CodeBlock>
 
       <h4>Request Parameters</h4>
@@ -980,7 +1110,7 @@ Content-Type: application/json
 
       <h2>Example Usage</h2>
       <h3>JavaScript (Fetch)</h3>
-      <CodeBlock language="javascript">{`const response = await fetch('https://api.wrap-x.com/api/wrapped-apis/YOUR_ENDPOINT_ID/chat', {
+      <CodeBlock language="javascript">{`const response = await fetch('https://api.wrap-x.com/api/wrap-x/chat', {
   method: 'POST',
   headers: {
     'Authorization': 'Bearer YOUR_API_KEY_HERE',
@@ -998,7 +1128,7 @@ console.log(data.response);`}</CodeBlock>
       <CodeBlock language="python">{`import requests
 
 response = requests.post(
-    'https://api.wrap-x.com/api/wrapped-apis/YOUR_ENDPOINT_ID/chat',
+    'https://api.wrap-x.com/api/wrap-x/chat',
     headers={
         'Authorization': 'Bearer YOUR_API_KEY_HERE',
         'Content-Type': 'application/json'
@@ -1012,7 +1142,7 @@ data = response.json()
 print(data['response'])`}</CodeBlock>
 
       <h3>cURL</h3>
-      <CodeBlock language="bash">{`curl -X POST https://api.wrap-x.com/api/wrapped-apis/YOUR_ENDPOINT_ID/chat \\
+      <CodeBlock language="bash">{`curl -X POST https://api.wrap-x.com/api/wrap-x/chat \\
   -H "Authorization: Bearer YOUR_API_KEY_HERE" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -1047,10 +1177,12 @@ function Guides() {
       <h3>Step 3: Configure</h3>
       <p>Answer the chat's questions:</p>
       <ul>
+        <li><strong>Platform:</strong> Select where you'll use it (e.g., Backend app, Slack, CRM)</li>
         <li><strong>Role:</strong> Customer support agent</li>
         <li><strong>Tone:</strong> Friendly or Supportive</li>
+        <li><strong>Response Format:</strong> Choose content style and data structure based on your platform</li>
         <li><strong>Model:</strong> Choose based on your needs (gpt-4o for better quality, gpt-4o-mini for cost efficiency)</li>
-        <li><strong>Examples:</strong> Include 20-25 examples covering password resets, order issues, billing questions, etc.</li>
+        <li><strong>Examples:</strong> Include comprehensive examples covering password resets, order issues, billing questions, etc.</li>
       </ul>
 
       <h3>Step 4: Test and Deploy</h3>
@@ -1076,8 +1208,10 @@ function Guides() {
 
       <h3>Step 3: Configure</h3>
       <ul>
+        <li><strong>Platform:</strong> Select where you'll use it (e.g., Backend app, Custom)</li>
         <li><strong>Role:</strong> Expert software developer</li>
         <li><strong>Tone:</strong> Technical</li>
+        <li><strong>Response Format:</strong> Choose format (e.g., JSON for APIs, Python code for code generation)</li>
         <li><strong>Thinking Mode:</strong> Conditional (for complex problems)</li>
         <li><strong>Examples:</strong> Include examples for debugging, code explanations, API usage, optimization, etc.</li>
       </ul>
@@ -1098,8 +1232,10 @@ function Guides() {
 
       <h3>Step 3: Configure</h3>
       <ul>
+        <li><strong>Platform:</strong> Select where you'll use it (e.g., Backend app, Custom)</li>
         <li><strong>Role:</strong> Research assistant</li>
         <li><strong>Tone:</strong> Professional</li>
+        <li><strong>Response Format:</strong> Choose format (e.g., JSON for structured data, Plain text for summaries)</li>
         <li><strong>Web Search:</strong> Always or Conditional</li>
         <li><strong>Thinking Mode:</strong> Conditional (for complex research)</li>
         <li><strong>Examples:</strong> Include examples for summarizing, comparing, citing sources, etc.</li>
@@ -1256,6 +1392,160 @@ function ThinkingMode() {
         <li>Use <strong>Off</strong> for simple chatbots or when speed is critical</li>
         <li>Note that thinking mode may increase response time and token usage</li>
       </ul>
+    </div>
+  );
+}
+
+function Settings() {
+  return (
+    <div id="settings" className="doc-section">
+      <h1>Settings & Configuration</h1>
+      <p>
+        The Settings modal provides comprehensive control over your wrapped API's behavior, 
+        tools, test chat configuration, and response format. Access it by clicking the 
+        <strong> Settings</strong> button in the top-right corner of any wrapped API configuration page.
+      </p>
+
+      <h2>Accessing Settings</h2>
+      <ol>
+        <li>Navigate to your wrapped API configuration page (from Dashboard, click on a wrapped API)</li>
+        <li>Look for the <strong>Settings</strong> button (gear icon) in the top-right corner</li>
+        <li>Click to open the Settings modal</li>
+      </ol>
+
+      <h2>Tools Configurations</h2>
+      <p>Configure advanced features for your wrapped API:</p>
+
+      <h3>Web Search</h3>
+      <p>
+        Toggle web search on or off. When enabled, your AI can search the internet for current 
+        information, facts, and real-time data. See the <a href="#web-search">Web Search</a> section 
+        for detailed information.
+      </p>
+
+      <h3>Thinking Mode</h3>
+      <p>
+        Toggle thinking/planning mode on or off. When enabled, your AI will plan before responding, 
+        improving complex problem-solving. See the <a href="#thinking-mode">Thinking Mode</a> section 
+        for detailed information.
+      </p>
+
+      <h3>File Upload</h3>
+      <p>
+        Upload documents (PDF, TXT, CSV) that your AI can reference when answering questions. 
+        Documents are processed and made available to your wrapped API during conversations.
+      </p>
+      <ul>
+        <li>Click "Upload File" to select documents</li>
+        <li>View uploaded documents in the list</li>
+        <li>Delete documents you no longer need</li>
+      </ul>
+
+      <h2>Test Chat Configurations</h2>
+      <p>
+        Configure how the Test Chat behaves to match your production environment. These settings 
+        help you simulate exactly how your wrapped API will work in your application.
+      </p>
+
+      <h3>Conversation History</h3>
+      <p>Control how much conversation history is sent with each request:</p>
+      <ul>
+        <li><strong>All history</strong> - Sends all previous messages in the conversation
+          <ul>
+            <li>Best for: Maintaining full context across long conversations</li>
+            <li>Use when: You want the AI to remember everything discussed</li>
+            <li>Note: May use more tokens, but provides better context</li>
+          </ul>
+        </li>
+        <li><strong>Last N messages</strong> - Sends only the last N messages
+          <ul>
+            <li>Best for: Managing token usage and costs</li>
+            <li>Use when: You want to limit context window size</li>
+            <li>Configure: Set the number of messages (e.g., 5, 10, 20)</li>
+            <li>Note: Recent context is maintained, older messages are excluded</li>
+          </ul>
+        </li>
+      </ul>
+
+      <h3>Display Options</h3>
+      <p>Control what information is shown in the Test Chat interface:</p>
+      <ul>
+        <li><strong>Show thinking process</strong> - Display the AI's planning and reasoning steps
+          <ul>
+            <li>Useful for: Understanding how the AI approaches complex problems</li>
+            <li>Helpful for: Debugging and improving your configuration</li>
+          </ul>
+        </li>
+        <li><strong>Show web searching</strong> - Display when the AI searches the web
+          <ul>
+            <li>Useful for: Seeing when web search is triggered</li>
+            <li>Helpful for: Verifying web search behavior matches your configuration</li>
+          </ul>
+        </li>
+        <li><strong>Auto scroll to bottom</strong> - Automatically scroll to the latest message
+          <ul>
+            <li>Useful for: Following long conversations</li>
+            <li>Can be disabled: If you prefer manual scrolling</li>
+          </ul>
+        </li>
+      </ul>
+
+      <h3>Best Practices for Test Chat Configuration</h3>
+      <ul>
+        <li>Match your production environment - Configure Test Chat to behave like your app</li>
+        <li>Test different history modes - See how "All history" vs "Last N" affects responses</li>
+        <li>Use display options for debugging - Show thinking/web search when fine-tuning</li>
+        <li>Hide display options for realistic testing - Simulate end-user experience</li>
+      </ul>
+
+      <h2>Response Format</h2>
+      <p>
+        View and manage your wrapped API's response format configuration. This section displays:
+      </p>
+      <ul>
+        <li><strong>Platform/Integration</strong> - Where your wrap will be used (Backend, Zapier, Shopify, etc.)</li>
+        <li><strong>Response Format</strong> - Both content style and data structure</li>
+        <li><strong>API Response Structure</strong> - How to extract and parse responses from the API</li>
+      </ul>
+
+      <h3>Updating Response Format</h3>
+      <p>
+        To update the response format:
+      </p>
+      <ol>
+        <li>Click "Update Format in Config Chat" button</li>
+        <li>You'll be taken to the Config Chat tab</li>
+        <li>Tell the AI about your new format requirements</li>
+        <li>The AI will update the configuration accordingly</li>
+      </ol>
+
+      <h3>Understanding API Response Structure</h3>
+      <p>
+        All Wrap-X API responses follow this structure:
+      </p>
+      <CodeBlock language="json">{`{
+  "choices": [
+    {
+      "message": {
+        "content": "Your AI's response here"
+      }
+    }
+  ]
+}`}</CodeBlock>
+      <p>
+        Extract the content from <code>choices[0].message.content</code> and parse it according to 
+        your configured data format (JSON, Array, Plain Text, etc.).
+      </p>
+
+      <h2>Saving Settings</h2>
+      <p>
+        After making changes, click <strong>Save All Settings</strong> to apply your configuration. 
+        Changes take effect immediately for new requests.
+      </p>
+      <p>
+        <strong>Note:</strong> Test Chat configuration is stored locally in your browser, so it 
+        persists across sessions for each wrapped API.
+      </p>
     </div>
   );
 }

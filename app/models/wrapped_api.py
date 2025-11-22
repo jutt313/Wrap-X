@@ -15,7 +15,8 @@ class WrappedAPI(Base):
     endpoint_id = Column(String, unique=True, index=True, nullable=False)  # unique endpoint identifier
     is_active = Column(Boolean, default=True)
     # API settings
-    thinking_mode = Column(String, nullable=True)  # "always_on", "always_off", "custom"
+    thinking_mode = Column(String, nullable=True)  # "always", "conditional", "off"
+    thinking_focus = Column(Text, nullable=True)  # What to think/plan about when thinking is enabled
     model = Column(String, nullable=True)  # e.g., "gpt-4", "claude-3-sonnet"
     temperature = Column(Float, nullable=True)
     max_tokens = Column(Integer, nullable=True)
@@ -25,6 +26,9 @@ class WrappedAPI(Base):
     # Tool toggles
     web_search_enabled = Column(Boolean, default=False, nullable=False)
     thinking_enabled = Column(Boolean, default=False, nullable=False)
+    # Enum + triggers for web search
+    web_search = Column(String, nullable=True)  # "always", "conditional", "off"
+    web_search_triggers = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -43,4 +47,3 @@ class WrappedAPI(Base):
     feedbacks = relationship("Feedback", back_populates="wrapped_api", cascade="all, delete-orphan")
     config_versions = relationship("ConfigVersion", back_populates="wrapped_api", cascade="all, delete-orphan")
     uploaded_documents = relationship("UploadedDocument", back_populates="wrapped_api", cascade="all, delete-orphan")
-
