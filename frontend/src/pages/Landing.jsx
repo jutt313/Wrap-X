@@ -942,7 +942,7 @@ function Landing() {
             <a href="/terms-of-service">Terms</a>
             <a href="/privacy-policy">Privacy</a>
             <a href="/cookie-policy">Cookies</a>
-            <a href="/tokushoho">特定商取引法</a>
+            <a href="/specified-commercial-transactions">特定商取引法</a>
             <a href="mailto:info@wrap-x.com">Contact</a>
           </div>
           <p className="footer-copy-modern">© 2025 Wrap-X. All rights reserved.</p>
