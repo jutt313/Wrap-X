@@ -10,8 +10,9 @@ class APIClient {
   async request(endpoint, options = {}) {
     // Use relative URL for Vite proxy, or full URL if in production
     const isDevelopment = import.meta.env.DEV;
-    const url = isDevelopment 
-      ? endpoint  // Use relative URL to go through Vite proxy
+    // Always use baseURL in production, or if baseURL is set (not localhost)
+    const url = (isDevelopment && this.baseURL.includes('localhost')) 
+      ? endpoint  // Use relative URL to go through Vite proxy in local dev
       : `${this.baseURL}${endpoint}`;
     
     // Initialize headers - start with API config headers
