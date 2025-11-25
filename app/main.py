@@ -73,6 +73,7 @@ app.add_middleware(
         "https://www.wrap-x.com",
         "https://wrap-x-479223.web.app",  # Firebase Hosting
         "https://wrap-x-479223.firebaseapp.com",  # Firebase Hosting (alternate URL)
+        "https://wrap-x-198767072474.us-central1.run.app",  # Cloud Run direct domain
         "http://localhost:3000",  # Keep for local dev
         "http://localhost:5173",  # Keep for local dev
         "http://127.0.0.1:3000",  # Keep for local dev
