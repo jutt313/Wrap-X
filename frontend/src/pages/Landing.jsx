@@ -915,6 +915,93 @@ function Landing() {
         </div>
       </section>
 
+      {/* What is Wrap-X Section */}
+      <section className="what-is-section">
+        <div className="section-header-modern">
+          <h2 className="section-title-modern">What is Wrap-X?</h2>
+          <p className="section-subtitle-modern">The easiest way to build custom AI APIs</p>
+        </div>
+        <div className="what-is-container" data-scroll>
+          <div className="what-is-content">
+            <div className="what-is-text">
+              <h3>Wrap-X wraps any LLM with your custom configuration</h3>
+              <p>
+                Instead of writing hundreds of lines of code to integrate AI into your application, 
+                Wrap-X lets you configure your AI assistant through a simple chat interface. 
+                Describe what you want, and we handle the rest.
+              </p>
+              <ul className="what-is-features">
+                <li>✅ No coding required</li>
+                <li>✅ Works with 100+ LLM providers</li>
+                <li>✅ Deploy in minutes, not days</li>
+                <li>✅ Production-ready APIs instantly</li>
+              </ul>
+              <button className="btn-learn-more" onClick={() => navigate('/how-it-works')}>
+                Learn How It Works →
+              </button>
+            </div>
+            <div className="what-is-diagram">
+              <div className="diagram-step">
+                <div className="step-number">1</div>
+                <div className="step-content">
+                  <strong>Add LLM Provider</strong>
+                  <p>Connect OpenAI, Claude, or any provider</p>
+                </div>
+              </div>
+              <div className="diagram-arrow">↓</div>
+              <div className="diagram-step">
+                <div className="step-number">2</div>
+                <div className="step-content">
+                  <strong>Configure via Chat</strong>
+                  <p>Describe what you want your AI to do</p>
+                </div>
+              </div>
+              <div className="diagram-arrow">↓</div>
+              <div className="diagram-step">
+                <div className="step-number">3</div>
+                <div className="step-content">
+                  <strong>Get API Endpoint</strong>
+                  <p>Production-ready API in minutes</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Trusted By Section */}
+      <section className="trusted-by-section">
+        <div className="section-header-modern">
+          <h2 className="section-title-modern">Trusted by Developers Worldwide</h2>
+          <p className="section-subtitle-modern">Join thousands building AI applications with Wrap-X</p>
+        </div>
+        <div className="trusted-by-logos" data-scroll>
+          <div className="logo-item">Startups</div>
+          <div className="logo-item">Enterprises</div>
+          <div className="logo-item">Agencies</div>
+          <div className="logo-item">Developers</div>
+          <div className="logo-item">Teams</div>
+        </div>
+        <div className="trusted-stats">
+          <div className="stat-item">
+            <div className="stat-number">100+</div>
+            <div className="stat-label">LLM Providers</div>
+          </div>
+          <div className="stat-item">
+            <div className="stat-number">1000+</div>
+            <div className="stat-label">Active Users</div>
+          </div>
+          <div className="stat-item">
+            <div className="stat-number">10K+</div>
+            <div className="stat-label">APIs Deployed</div>
+          </div>
+          <div className="stat-item">
+            <div className="stat-number">99.9%</div>
+            <div className="stat-label">Uptime</div>
+          </div>
+        </div>
+      </section>
+
       {/* Final CTA */}
       <section className="cta-final-modern">
         <div className="cta-gradient-bg"></div>
@@ -938,14 +1025,36 @@ function Landing() {
       {/* Minimal Footer */}
       <footer className="footer-modern">
         <div className="footer-content-modern">
-          <div className="footer-links-modern">
-            <a href="/terms-of-service">Terms</a>
-            <a href="/privacy-policy">Privacy</a>
-            <a href="/cookie-policy">Cookies</a>
-            <a href="/specified-commercial-transactions">特定商取引法</a>
-            <a href="mailto:info@wrap-x.com">Contact</a>
+          <div className="footer-columns">
+            <div className="footer-column">
+              <h4>Product</h4>
+              <a href="/features">Features</a>
+              <a href="/use-cases">Use Cases</a>
+              <a href="/how-it-works">How It Works</a>
+              <a href="/integrations">Integrations</a>
+              <a href="/pricing">Pricing</a>
+            </div>
+            <div className="footer-column">
+              <h4>Resources</h4>
+              <a href="/examples">Examples</a>
+              <a href="/faq">FAQ</a>
+              <a href="/documentation">Documentation</a>
+            </div>
+            <div className="footer-column">
+              <h4>Legal</h4>
+              <a href="/terms-of-service">Terms</a>
+              <a href="/privacy-policy">Privacy</a>
+              <a href="/cookie-policy">Cookies</a>
+              <a href="/specified-commercial-transactions">特定商取引法</a>
+            </div>
+            <div className="footer-column">
+              <h4>Company</h4>
+              <a href="mailto:info@wrap-x.com">Contact</a>
+            </div>
           </div>
-          <p className="footer-copy-modern">© 2025 Wrap-X. All rights reserved.</p>
+          <div className="footer-links-modern">
+            <p className="footer-copy-modern">© 2025 Wrap-X. All rights reserved.</p>
+          </div>
         </div>
       </footer>
     </div>

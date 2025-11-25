@@ -8,6 +8,13 @@ import TermsOfService from './pages/TermsOfService'
 import PrivacyPolicy from './pages/PrivacyPolicy'
 import CookiePolicy from './pages/CookiePolicy'
 import Tokusho from './pages/Tokusho'
+import Features from './pages/Features'
+import UseCases from './pages/UseCases'
+import HowItWorks from './pages/HowItWorks'
+import Integrations from './pages/Integrations'
+import Pricing from './pages/Pricing'
+import Examples from './pages/Examples'
+import FAQ from './pages/FAQ'
 import Login from './pages/auth/Login'
 import Register from './pages/auth/Register'
 import ForgotPassword from './pages/auth/ForgotPassword'
@@ -38,6 +45,13 @@ function App() {
       <Route path="/audit-logs" element={<ProtectedRoute><div>Audit Logs - Coming Soon</div></ProtectedRoute>} />
       <Route path="/notifications" element={<ProtectedRoute><div>Notifications - Coming Soon</div></ProtectedRoute>} />
       <Route path="/documentation" element={<ProtectedRoute><Documentation /></ProtectedRoute>} />
+      <Route path="/features" element={<Features />} />
+      <Route path="/use-cases" element={<UseCases />} />
+      <Route path="/how-it-works" element={<HowItWorks />} />
+      <Route path="/integrations" element={<Integrations />} />
+      <Route path="/pricing" element={<Pricing />} />
+      <Route path="/examples" element={<Examples />} />
+      <Route path="/faq" element={<FAQ />} />
       <Route path="/messages" element={<ProtectedRoute><div>Messages - Coming Soon</div></ProtectedRoute>} />
       <Route path="/organization" element={<ProtectedRoute><div>Organization - Coming Soon</div></ProtectedRoute>} />
       <Route path="/account" element={<ProtectedRoute><div>Account Settings - Coming Soon</div></ProtectedRoute>} />
