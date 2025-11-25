@@ -1,6 +1,6 @@
 // API Configuration
 export const API_CONFIG = {
-  baseURL: import.meta.env.VITE_API_URL || 'https://wrap-x-1.onrender.com',
+  baseURL: import.meta.env.VITE_API_URL || 'https://wrap-x-198767072474.us-central1.run.app',
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
