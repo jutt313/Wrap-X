@@ -18,7 +18,6 @@ COPY . .
 # Expose port
 EXPOSE 8000
 
-# Run migrations (with retry) and start server
-# Migrations will retry 3 times, then continue even if they fail
-CMD ["sh", "-c", "for i in 1 2 3; do alembic upgrade head && break || sleep 5; done; uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# Run migrations (optional - continue even if they fail) and start server
+CMD ["sh", "-c", "alembic upgrade head || echo 'Migrations failed, continuing...'; uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
 
