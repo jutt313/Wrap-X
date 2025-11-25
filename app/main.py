@@ -71,7 +71,9 @@ app.add_middleware(
     allow_origins=[
         "https://wrap-x.com",
         "https://www.wrap-x.com",
-        "https://wrap-x-frontend-t7ya.onrender.com",  # Render frontend
+        "https://wrap-x-479223.web.app",  # Firebase Hosting
+        "https://wrap-x-479223.firebaseapp.com",  # Firebase Hosting (alternate URL)
+        "https://wrap-x-frontend-t7ya.onrender.com",  # Render frontend (legacy)
         "http://localhost:3000",  # Keep for local dev
         "http://localhost:5173",  # Keep for local dev
         "http://127.0.0.1:3000",  # Keep for local dev
