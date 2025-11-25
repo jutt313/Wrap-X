@@ -1,11 +1,39 @@
 // API Configuration
+// In production, always use Cloud Run URL unless VITE_API_URL is explicitly set
+const getBaseURL = () => {
+  const envURL = import.meta.env.VITE_API_URL;
+  const defaultURL = 'https://wrap-x-198767072474.us-central1.run.app';
+  
+  // If VITE_API_URL is set and not localhost, use it
+  if (envURL && !envURL.includes('localhost') && !envURL.includes('127.0.0.1')) {
+    return envURL;
+  }
+  
+  // In production, always use Cloud Run
+  if (import.meta.env.PROD) {
+    return defaultURL;
+  }
+  
+  // In development, use env URL or default to localhost for Vite proxy
+  return envURL || 'http://localhost:8000';
+};
+
 export const API_CONFIG = {
-  baseURL: import.meta.env.VITE_API_URL || 'https://wrap-x-198767072474.us-central1.run.app',
+  baseURL: getBaseURL(),
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
   },
 };
+
+// Log the baseURL for debugging
+console.log('🔧 API Config initialized:', {
+  baseURL: API_CONFIG.baseURL,
+  envVITE_API_URL: import.meta.env.VITE_API_URL,
+  mode: import.meta.env.MODE,
+  dev: import.meta.env.DEV,
+  prod: import.meta.env.PROD
+});
 
 // API Endpoints
 export const API_ENDPOINTS = {
