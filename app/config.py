@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
     openai_api_key: Optional[str] = None  # For chat command parsing
-    openai_model: str = "gpt-4o-mini"  # Model for chat command parsing (default: gpt-4o-mini)
+    openai_model: str = "gpt-4-turbo"  # Model for chat command parsing (GPT-4 for better function calling)
     encryption_key: Optional[str] = None  # For encrypting/decrypting API keys
     
     # Stripe Configuration
@@ -27,8 +27,9 @@ class Settings(BaseSettings):
     stripe_price_professional: Optional[str] = None  # price_...
     stripe_price_business: Optional[str] = None  # price_...
 
-    # Frontend configuration
+    # Frontend/backend configuration
     frontend_base_url: str = "http://localhost:3000"  # Default to localhost for development
+    backend_base_url: str = "http://localhost:8000"  # Used for OAuth redirect URLs
     
     # Render API (optional, for MCP)
     render_api: Optional[str] = None
@@ -41,6 +42,10 @@ class Settings(BaseSettings):
     smtp_from_email: Optional[str] = None
     smtp_from_name: Optional[str] = "Wrap-X Team"
     smtp_use_tls: bool = True
+    
+    # Google Custom Search API Configuration
+    google_cse_api_key: Optional[str] = None
+    google_cse_id: Optional[str] = None
 
     class Config:
         env_file = ".env"

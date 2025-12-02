@@ -148,11 +148,18 @@ function ToolsConfigModal({ wrappedApiId, isOpen, onClose }) {
 
   const handleFileUpload = async (fileData) => {
     try {
+      console.log('ToolsConfigModal: Starting file upload', { wrappedApiId, fileData: { ...fileData, content: fileData.content?.substring(0, 50) + '...' } });
       await documentService.uploadDocument(wrappedApiId, fileData);
+      console.log('ToolsConfigModal: File upload successful');
       // Reload documents list
       await loadDocuments();
     } catch (err) {
-      console.error('Error uploading file:', err);
+      console.error('ToolsConfigModal: Error uploading file:', err);
+      console.error('ToolsConfigModal: Error details:', {
+        message: err.message,
+        response: err.response,
+        stack: err.stack
+      });
       throw err;
     }
   };

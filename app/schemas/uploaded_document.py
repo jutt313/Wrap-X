@@ -20,6 +20,7 @@ class UploadedDocumentResponse(BaseModel):
     file_type: str
     mime_type: Optional[str] = None
     file_size: int
+    extracted_text: Optional[str] = None
     created_at: datetime
 
     class Config:

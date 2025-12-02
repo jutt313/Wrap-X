@@ -22,6 +22,9 @@ from app.models.tool import Tool
 from app.models.wrapped_api_tool import WrappedAPITool
 from app.models.api_log import APILog
 from app.models.uploaded_document import UploadedDocument
+from app.models.wrap_tool import WrapTool
+from app.models.wrap_credential import WrapCredential
+from app.models.oauth_app import OAuthApp
 from app.schemas.wrapped_api import (
     WrappedAPICreate,
     WrappedAPIResponse,
@@ -36,7 +39,10 @@ from app.schemas.wrapped_api import (
     APIKeyCreate,
     APIKeyListResponse,
     APIKeyListItem,
-    ToolsUpdateRequest
+    ToolsUpdateRequest,
+    IntegrationResponse,
+    IntegrationCreate,
+    IntegrationField
 )
 from app.schemas.uploaded_document import UploadedDocumentCreate, UploadedDocumentResponse
 from app.auth.dependencies import get_current_active_user
@@ -46,8 +52,12 @@ from app.services.model_catalog import get_available_models
 from app.services.billing_service import check_wrap_limit
 from app.services.notification_service import create_notification
 from app.services.config_validator import validate_config_updates, sanitize_chat_logs, ValidationError
+from app.services.integration_test_service import test_integration_credentials
+from app.services.document_extractor import extract_text_preview, extract_full_text
 from app.middleware.rate_limit import check_rate_limit
 from app.models.config_version import ConfigVersion
+from app.routers.llm_providers import encrypt_api_key, decrypt_api_key
+from app.services.oauth_helper import encrypt_secret, generate_redirect_url
 import json
 from cryptography.fernet import Fernet
 import hashlib
@@ -62,6 +72,32 @@ def generate_endpoint_id() -> str:
     """Generate unique endpoint ID"""
     return f"wrap_{uuid.uuid4().hex[:24]}"
 
+
+async def _get_or_create_oauth_app(
+    db: AsyncSession,
+    wrapped_api_id: int,
+    provider: str,
+) -> OAuthApp:
+    provider = provider.lower()
+    result = await db.execute(
+        select(OAuthApp).where(
+            OAuthApp.wrapped_api_id == wrapped_api_id,
+            OAuthApp.provider == provider,
+        )
+    )
+    oauth_app = result.scalar_one_or_none()
+    if oauth_app:
+        return oauth_app
+
+    oauth_app = OAuthApp(
+        wrapped_api_id=wrapped_api_id,
+        provider=provider,
+        redirect_url=generate_redirect_url(wrapped_api_id, provider),
+        scopes=[],
+    )
+    db.add(oauth_app)
+    await db.flush()
+    return oauth_app
 
 def _stringify_response(value) -> str:
     """Safely convert any response payload to a string for DB storage and API.
@@ -670,18 +706,71 @@ async def send_config_chat_message(
                 .order_by(UploadedDocument.created_at.desc())
             )
             documents = docs_result.scalars().all()
-            documents_info = [
-                {
+            documents_info = []
+            for doc in documents:
+                doc_info = {
                     "filename": doc.filename,
                     "file_type": doc.file_type,
                     "file_size": doc.file_size,
-                    "created_at": doc.created_at.isoformat() if doc.created_at else None
+                    "created_at": doc.created_at.isoformat() if doc.created_at else None,
                 }
-                for doc in documents
-            ]
+                # Use stored extracted_text if available, otherwise extract preview
+                if doc.extracted_text:
+                    doc_info["extracted_text"] = doc.extracted_text
+                    # Also include a short preview for display
+                    preview = doc.extracted_text[:300] + "…" if len(doc.extracted_text) > 300 else doc.extracted_text
+                    doc_info["preview"] = preview
+                else:
+                    # Fallback: extract preview for old documents without extracted_text
+                    preview = extract_text_preview(
+                        content_b64=doc.content,
+                        file_type=doc.file_type,
+                        mime_type=doc.mime_type,
+                    )
+                    if preview:
+                        doc_info["preview"] = preview
+                documents_info.append(doc_info)
         except Exception as e:
             logger.warning(f"Failed to load documents: {e}")
             documents_info = []
+
+        # Load existing integrations so assistant knows what's already connected
+        existing_integrations = []
+        try:
+            tools_result = await db.execute(
+                select(WrapTool)
+                .where(WrapTool.wrap_id == wrapped_api_id)
+                .order_by(WrapTool.created_at.desc())
+            )
+            tools = tools_result.scalars().all()
+            for tool in tools:
+                # Check if it has credentials (is connected)
+                cred_result = await db.execute(
+                    select(WrapCredential).where(
+                        WrapCredential.wrap_id == wrapped_api_id,
+                        WrapCredential.tool_name == tool.tool_name
+                    )
+                )
+                credential = cred_result.scalar_one_or_none()
+                
+                integration_info = {
+                    "name": tool.tool_name,
+                    "display_name": tool.tool_name,
+                    "description": tool.description or "",
+                    "is_connected": credential is not None
+                }
+                
+                # Add OAuth info if available
+                if credential and credential.tool_metadata:
+                    oauth_meta = credential.tool_metadata.get("oauth")
+                    if oauth_meta:
+                        integration_info["oauth_provider"] = oauth_meta.get("provider")
+                        integration_info["oauth_scopes"] = oauth_meta.get("scopes", [])
+                
+                existing_integrations.append(integration_info)
+        except Exception as e:
+            logger.warning(f"Failed to load existing integrations: {e}")
+            existing_integrations = []
 
         # Get current config for parsing
         # Extract platform from instructions if it exists (format: "Platform: Zapier" or similar)
@@ -716,7 +805,9 @@ async def send_config_chat_message(
             # Uploaded documents
             "uploaded_documents": documents_info,
             # Test chat logs for analysis
-            "test_chat_logs": test_chat_logs
+            "test_chat_logs": test_chat_logs,
+            # Existing integrations (so assistant knows what's already connected)
+            "existing_integrations": existing_integrations
         }
 
         # If available_models were not provided by the UI, try to fetch dynamically
@@ -1753,6 +1844,13 @@ async def upload_document(
             detail="Wrapped API not found or not owned by user"
         )
     
+    # Extract full text content from the document
+    extracted_text = extract_full_text(
+        content_b64=document_data.content,
+        file_type=document_data.file_type,
+        mime_type=document_data.mime_type,
+    )
+    
     # Create document
     document = UploadedDocument(
         wrapped_api_id=wrapped_api_id,
@@ -1760,7 +1858,8 @@ async def upload_document(
         file_type=document_data.file_type,
         mime_type=document_data.mime_type,
         file_size=document_data.file_size,
-        content=document_data.content
+        content=document_data.content,
+        extracted_text=extracted_text
     )
     
     db.add(document)
@@ -1845,3 +1944,421 @@ async def delete_document(
     await db.commit()
     
     return {"message": "Document deleted successfully"}
+
+
+@router.get("/{wrapped_api_id}/integrations", response_model=List[IntegrationResponse])
+async def list_integrations(
+    wrapped_api_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """List all integrations (tools with credentials) for a wrapped API"""
+    # Verify wrapped API exists and belongs to user
+    result = await db.execute(
+        select(WrappedAPI).where(
+            WrappedAPI.id == wrapped_api_id,
+            WrappedAPI.user_id == current_user.id
+        )
+    )
+    wrapped_api = result.scalar_one_or_none()
+    
+    if not wrapped_api:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Wrapped API not found or not owned by user"
+        )
+    
+    # Get all tools for this wrap
+    tools_result = await db.execute(
+        select(WrapTool)
+        .where(WrapTool.wrap_id == wrapped_api_id)
+        .order_by(WrapTool.created_at.desc())
+    )
+    tools = tools_result.scalars().all()
+    
+    integrations = []
+    for tool in tools:
+        # Get credential if exists
+        cred_result = await db.execute(
+            select(WrapCredential).where(
+                WrapCredential.wrap_id == wrapped_api_id,
+                WrapCredential.tool_name == tool.tool_name
+            )
+        )
+        credential = cred_result.scalar_one_or_none()
+        
+        # Extract field definitions from tool_metadata or use defaults
+        field_definitions = []
+        if credential and credential.tool_metadata:
+            field_definitions = credential.tool_metadata.get("field_definitions", [])
+        
+        # If no field definitions, create basic ones from tool name
+        if not field_definitions:
+            field_definitions = [{
+                "name": "api_key",
+                "label": "API Key",
+                "type": "password",
+                "required": True
+            }]
+        
+        oauth_meta = credential.tool_metadata.get("oauth") if credential and credential.tool_metadata else None
+
+        integrations.append(IntegrationResponse(
+            name=tool.tool_name,
+            display_name=tool.tool_name,  # Could be enhanced with display_name field
+            description=tool.description,
+            is_connected=credential is not None,
+            fields=[IntegrationField(**field) for field in field_definitions],
+            created_at=tool.created_at,
+            updated_at=credential.updated_at if credential else tool.updated_at,
+            requires_oauth=bool(oauth_meta.get("requires_oauth") if oauth_meta else False),
+            oauth_provider=oauth_meta.get("provider") if oauth_meta else None,
+            oauth_scopes=oauth_meta.get("scopes") if oauth_meta else None,
+        ))
+    
+    return integrations
+
+
+@router.post("/{wrapped_api_id}/integrations", response_model=IntegrationResponse)
+async def save_integration(
+    wrapped_api_id: int,
+    integration_data: IntegrationCreate,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Save credentials for an integration (tool)"""
+    # Verify wrapped API exists and belongs to user
+    result = await db.execute(
+        select(WrappedAPI).where(
+            WrappedAPI.id == wrapped_api_id,
+            WrappedAPI.user_id == current_user.id
+        )
+    )
+    wrapped_api = result.scalar_one_or_none()
+    
+    if not wrapped_api:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Wrapped API not found or not owned by user"
+        )
+    
+    # Check if tool exists, create if not
+    tool_result = await db.execute(
+        select(WrapTool).where(
+            WrapTool.wrap_id == wrapped_api_id,
+            WrapTool.tool_name == integration_data.tool_name
+        )
+    )
+    tool = tool_result.scalar_one_or_none()
+    
+    if not tool:
+        # Create new tool
+        tool = WrapTool(
+            wrap_id=wrapped_api_id,
+            tool_name=integration_data.tool_name,
+            tool_code=integration_data.tool_code,
+            description=integration_data.description,
+            is_active=True
+        )
+        db.add(tool)
+        await db.flush()
+    
+    # Encrypt credentials
+    credentials_payload = integration_data.credentials or {}
+    credentials_json = json.dumps(credentials_payload)
+    encrypted_credentials = encrypt_api_key(credentials_json)
+    
+    # Store field definitions in metadata
+    tool_metadata = {
+        "field_definitions": [field.dict() for field in integration_data.credential_fields]
+    }
+
+    oauth_metadata = None
+    if integration_data.requires_oauth and integration_data.oauth_provider:
+        provider = integration_data.oauth_provider.lower()
+        oauth_metadata = {
+            "requires_oauth": True,
+            "provider": provider,
+            "scopes": integration_data.oauth_scopes or [],
+        }
+        oauth_app = await _get_or_create_oauth_app(db, wrapped_api_id, provider)
+        scope_set = set(oauth_app.scopes or [])
+        scope_set.update(oauth_metadata["scopes"])
+        oauth_app.scopes = sorted(scope_set)
+        if credentials_payload.get("client_id"):
+            oauth_app.client_id = credentials_payload["client_id"]
+        if credentials_payload.get("client_secret"):
+            oauth_app.client_secret_encrypted = encrypt_secret(credentials_payload["client_secret"])
+        if credentials_payload.get("refresh_token"):
+            oauth_app.refresh_token_encrypted = encrypt_secret(credentials_payload["refresh_token"])
+        if credentials_payload.get("access_token"):
+            oauth_app.access_token_encrypted = encrypt_secret(credentials_payload["access_token"])
+        if not oauth_app.redirect_url:
+            oauth_app.redirect_url = generate_redirect_url(wrapped_api_id, provider)
+        oauth_app.updated_at = datetime.now(timezone.utc)
+        tool_metadata["oauth"] = oauth_metadata
+    
+    # Check if credential exists, update or create
+    cred_result = await db.execute(
+        select(WrapCredential).where(
+            WrapCredential.wrap_id == wrapped_api_id,
+            WrapCredential.tool_name == integration_data.tool_name
+        )
+    )
+    credential = cred_result.scalar_one_or_none()
+    
+    if credential:
+        # Update existing
+        credential.credentials_json = encrypted_credentials
+        credential.tool_metadata = tool_metadata
+        credential.updated_at = datetime.now(timezone.utc)
+    else:
+        # Create new
+        credential = WrapCredential(
+            wrap_id=wrapped_api_id,
+            tool_id=tool.id,
+            tool_name=integration_data.tool_name,
+            credentials_json=encrypted_credentials,
+            tool_metadata=tool_metadata
+        )
+        db.add(credential)
+    
+    await db.commit()
+    await db.refresh(credential)
+    await db.refresh(tool)
+    
+    return IntegrationResponse(
+        name=tool.tool_name,
+        display_name=integration_data.display_name,
+        description=integration_data.description,
+        is_connected=True,
+        fields=integration_data.credential_fields,
+        created_at=tool.created_at,
+        updated_at=credential.updated_at,
+        requires_oauth=bool(oauth_metadata),
+        oauth_provider=oauth_metadata.get("provider") if oauth_metadata else None,
+        oauth_scopes=oauth_metadata.get("scopes") if oauth_metadata else None,
+    )
+
+
+@router.post("/{wrapped_api_id}/integrations/{tool_name}/test")
+async def test_integration(
+    wrapped_api_id: int,
+    tool_name: str,
+    test_data: dict,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Test integration credentials without saving them"""
+    # Verify wrapped API exists and belongs to user
+    result = await db.execute(
+        select(WrappedAPI).where(
+            WrappedAPI.id == wrapped_api_id,
+            WrappedAPI.user_id == current_user.id
+        )
+    )
+    wrapped_api = result.scalar_one_or_none()
+    
+    if not wrapped_api:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Wrapped API not found or not owned by user"
+        )
+    
+    # Get credentials from request or from database
+    credentials = test_data.get('credentials', {})
+    
+    # If no credentials provided, try to load from database
+    if not credentials:
+        cred_result = await db.execute(
+            select(WrapCredential).where(
+                WrapCredential.wrap_id == wrapped_api_id,
+                WrapCredential.tool_name == tool_name
+            )
+        )
+        credential = cred_result.scalar_one_or_none()
+        
+        if credential:
+            try:
+                credentials_json = decrypt_api_key(credential.credentials_json)
+                credentials = json.loads(credentials_json)
+            except Exception as e:
+                logger.error(f"Failed to decrypt credentials: {e}")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Failed to decrypt stored credentials"
+                )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No credentials provided and none found in database"
+            )
+    
+    # Get tool code if available
+    tool_code = test_data.get('tool_code')
+    if not tool_code:
+        tool_result = await db.execute(
+            select(WrapTool).where(
+                WrapTool.wrap_id == wrapped_api_id,
+                WrapTool.tool_name == tool_name
+            )
+        )
+        tool = tool_result.scalar_one_or_none()
+        if tool:
+            tool_code = tool.tool_code
+    
+    # Test credentials
+    try:
+        success, message = await test_integration_credentials(
+            tool_name=tool_name,
+            credentials=credentials,
+            tool_code=tool_code
+        )
+        
+        return {
+            "success": success,
+            "message": message,
+            "tool_name": tool_name
+        }
+        
+    except Exception as e:
+        logger.error(f"Error testing integration {tool_name}: {e}")
+        return {
+            "success": False,
+            "message": f"Test failed: {str(e)[:200]}",
+            "tool_name": tool_name
+        }
+
+
+@router.delete("/{wrapped_api_id}/integrations/{tool_name}")
+async def delete_integration(
+    wrapped_api_id: int,
+    tool_name: str,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Delete an integration (tool + credentials)"""
+    # Verify wrapped API exists and belongs to user
+    result = await db.execute(
+        select(WrappedAPI).where(
+            WrappedAPI.id == wrapped_api_id,
+            WrappedAPI.user_id == current_user.id
+        )
+    )
+    wrapped_api = result.scalar_one_or_none()
+    
+    if not wrapped_api:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Wrapped API not found or not owned by user"
+        )
+    
+    # Delete credential first
+    cred_result = await db.execute(
+        select(WrapCredential).where(
+            WrapCredential.wrap_id == wrapped_api_id,
+            WrapCredential.tool_name == tool_name
+        )
+    )
+    credential = cred_result.scalar_one_or_none()
+    if credential:
+        await db.delete(credential)
+    
+    # Delete tool
+    tool_result = await db.execute(
+        select(WrapTool).where(
+            WrapTool.wrap_id == wrapped_api_id,
+            WrapTool.tool_name == tool_name
+        )
+    )
+    tool = tool_result.scalar_one_or_none()
+    if tool:
+        await db.delete(tool)
+    
+    await db.commit()
+    
+    return {"message": f"Integration '{tool_name}' deleted successfully"}
+
+
+@router.patch("/{wrapped_api_id}/integrations/{tool_name}")
+async def update_integration(
+    wrapped_api_id: int,
+    tool_name: str,
+    update_data: dict,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Update integration metadata (description, is_active, etc.)"""
+    # Verify wrapped API exists and belongs to user
+    result = await db.execute(
+        select(WrappedAPI).where(
+            WrappedAPI.id == wrapped_api_id,
+            WrappedAPI.user_id == current_user.id
+        )
+    )
+    wrapped_api = result.scalar_one_or_none()
+    
+    if not wrapped_api:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Wrapped API not found or not owned by user"
+        )
+    
+    # Get tool
+    tool_result = await db.execute(
+        select(WrapTool).where(
+            WrapTool.wrap_id == wrapped_api_id,
+            WrapTool.tool_name == tool_name
+        )
+    )
+    tool = tool_result.scalar_one_or_none()
+    
+    if not tool:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Integration not found"
+        )
+    
+    # Update allowed fields
+    if 'description' in update_data:
+        tool.description = update_data['description']
+    
+    if 'is_active' in update_data:
+        tool.is_active = update_data['is_active']
+    
+    if 'tool_code' in update_data:
+        tool.tool_code = update_data['tool_code']
+    
+    tool.updated_at = datetime.now(timezone.utc)
+    
+    # Update credentials if provided
+    if 'credentials' in update_data:
+        credentials_json = json.dumps(update_data['credentials'])
+        encrypted_credentials = encrypt_api_key(credentials_json)
+        
+        cred_result = await db.execute(
+            select(WrapCredential).where(
+                WrapCredential.wrap_id == wrapped_api_id,
+                WrapCredential.tool_name == tool_name
+            )
+        )
+        credential = cred_result.scalar_one_or_none()
+        
+        if credential:
+            credential.credentials_json = encrypted_credentials
+            credential.updated_at = datetime.now(timezone.utc)
+        else:
+            # Create new credential if it doesn't exist
+            credential = WrapCredential(
+                wrap_id=wrapped_api_id,
+                tool_id=tool.id,
+                tool_name=tool_name,
+                credentials_json=encrypted_credentials,
+                tool_metadata={}
+            )
+            db.add(credential)
+    
+    await db.commit()
+    await db.refresh(tool)
+    
+    return {"message": f"Integration '{tool_name}' updated successfully", "tool": tool}

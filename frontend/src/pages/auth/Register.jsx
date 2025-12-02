@@ -34,7 +34,7 @@ function Register() {
     setResending(true);
     setError('');
     try {
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'https://wrap-x-198767072474.us-central1.run.app'}/api/auth/resend-verification`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/auth/resend-verification`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -1,0 +1,1087 @@
+"""
+Chat service for parsing user commands and building system prompts
+
+Enhanced to support:
+- Option-driven config parsing (model-first, A/B/C choices, confirmation)
+- Thinking and web search preferences
+- Tool scaffold for web search with LiteLLM function-calling
+"""
+import json
+import logging
+import re
+import os
+import urllib.request
+from urllib.error import URLError, HTTPError
+from typing import Optional, Dict, Any, List
+import openai
+from app.config import settings
+from app.models.prompt_config import PromptConfig
+from app.models.wrapped_api import WrappedAPI
+from app.services.smart_config_prompt import build_smart_config_prompt
+
+logger = logging.getLogger(__name__)
+
+# Initialize OpenAI client
+_openai_client = None
+
+def get_openai_client():
+    """Get or create OpenAI client"""
+    global _openai_client
+    if _openai_client is None:
+        if not settings.openai_api_key:
+            logger.warning("OPENAI_API_KEY not set - chat command parsing will not work")
+            return None
+        _openai_client = openai.OpenAI(api_key=settings.openai_api_key)
+    return _openai_client
+
+
+async def parse_chat_command(message: str, current_config: Dict[str, Any], history: Optional[List[Dict[str, str]]] = None) -> Dict[str, Any]:
+    """
+    Parse user chat command using OpenAI API
+    Returns dictionary with parsed updates to config
+    """
+    client = get_openai_client()
+    if not client:
+        logger.error("OpenAI client not available")
+        return {"error": "OpenAI API not configured"}
+    
+    try:
+        # Extract test chat logs for analysis
+        test_chat_logs = current_config.get("test_chat_logs", [])
+        test_logs_context = ""
+        if test_chat_logs:
+            test_logs_context = "\n\nTEST CHAT LOGS (Recent conversations with this wrapped API):\n"
+            for idx, log in enumerate(test_chat_logs[:10], 1):  # Show last 10 logs
+                test_logs_context += f"\n--- Log {idx} ({log.get('timestamp', 'Unknown time')}) ---\n"
+                if log.get("user_message"):
+                    test_logs_context += f"User: {log['user_message']}\n"
+                if log.get("assistant_response"):
+                    test_logs_context += f"Assistant: {log['assistant_response'][:200]}...\n"  # Truncate long responses
+                if log.get("tokens_used"):
+                    test_logs_context += f"Tokens: {log['tokens_used']}\n"
+
+        # ===== Wrap-X Configuration Assistant System Prompt =====
+        # Use smart, adaptive prompt instead of rigid checklist
+        system_prompt = build_smart_config_prompt(current_config, test_logs_context)
+
+        # OLD PROMPT REPLACED WITH SMART ADAPTIVE PROMPT
+        # See app/services/smart_config_prompt.py for the new intelligent configuration assistant
+        # Old 300+ line rigid checklist has been replaced with adaptive, reasoning-driven approach
+
+        # [Old prompt code removed - was 300+ lines of rigid workflow]
+        # Key changes:
+        # - Added thinking mode for reasoning
+        # - Added web search for research
+        # - Removed rigid 10-step checklist
+        # - Added custom tool integration support
+        # - Made questioning adaptive based on context
+
+        # OLD INTRODUCTION (removed):
+═══════════════════════════════════════════════════════
+Wrap-X is a platform that lets users create custom AI tools (called "wraps") by configuring how an LLM should behave. Each wrap has its own purpose, tone, rules, and settings.
+
+Your role: Help users build their wraps by asking the right questions and turning their answers into a complete configuration.
+
+═══════════════════════════════════════════════════════
+CONTEXT (WHAT YOU CAN SEE)
+═══════════════════════════════════════════════════════
+Current Configuration:
+- Purpose: {current_config.get('purpose', 'Not set')}
+- Target Users: {current_config.get('target_users', 'Not set')}
+- Platform/Integration: {current_config.get('platform', 'Not set')} (Where wrap will be used)
+- Role: {current_config.get('role', 'Not set')}
+- Instructions: {current_config.get('instructions', 'Not set')}
+- Tone: {current_config.get('tone', 'Not set')}
+- Rules: {current_config.get('rules', 'Not set')}
+- Response Format: {current_config.get('response_format', 'Not set')} (Content style + Data format)
+- Model: {current_config.get('model', 'Not set')}
+- Temperature: {current_config.get('temperature', 'Not set')}
+- Examples: {current_config.get('examples', 'Not set')}
+
+Provider Info:
+- Provider: {current_config.get('provider_name', 'Unknown')}
+- Available Models: {current_config.get('available_models', [])}
+
+Metadata:
+- Wrap Name: {current_config.get('wrap_name', 'Unknown')}
+- Project Name: {current_config.get('project_name', 'Unknown')}
+
+Features:
+- Thinking Enabled: {current_config.get('thinking_enabled', False)}
+- Web Search Enabled: {current_config.get('web_search_enabled', False)}
+- Uploaded Documents: {current_config.get('uploaded_documents', [])}
+
+Important: Treat existing values in current_config as the latest truth. When you update something, you are refining or completing that configuration.
+
+═══════════════════════════════════════════════════════
+THE COMPLETE CHECKLIST (ALL QUESTIONS YOU MUST ASK)
+═══════════════════════════════════════════════════════
+You MUST collect and confirm ALL of these before finalizing:
+
+1. Purpose - What does the wrap do?
+2. Target Users - Who will use it?
+3. Platform/Integration - Where will this wrap be used? (Backend app, Zapier, Make.com, Shopify, WordPress, Custom, etc.)
+4. Role - What expert is it acting as?
+5. Tone - How should it sound? VALID VALUES: Casual, Direct, Friendly, Professional, Supportive, Technical (can combine up to 2, e.g., "Friendly + Direct")
+6. Rules - Any DOs/DON'Ts?
+7. Response Format - Content style (Bullets? Short? Step-by-step?) AND Data structure (Plain text, JSON, Array, Python code, etc.)
+8. Model - Which LLM from available models? MUST be from the Available Models list shown in context. NEVER use an empty string or invalid model.
+9. Temperature - 0.1 (strict) / 0.3 (balanced) / 0.7 (creative)?
+10. Examples - 2-3 sample Q/A pairs
+11. Final Summary - Show everything before building
+
+CRITICAL VALIDATION RULES:
+- Tone MUST be one of: Casual, Direct, Friendly, Professional, Supportive, Technical (or 2 combined)
+- Model MUST be a valid model from the Available Models list in context
+- NEVER return empty strings for model or tone
+
+═══════════════════════════════════════════════════════
+THE INTERNAL LOOP (SELF-AUDIT)
+═══════════════════════════════════════════════════════
+Before EVERY response, you MUST:
+
+1. Check Status of all 10 checklist items
+2. Identify Fields - If item is "inferred": Ask DEEP clarifying questions to get more details. If "missing": Ask basic question
+3. Decide Next Step:
+   - If fields are inferred but need depth: Ask deep clarifying questions to expand on what was mentioned
+   - If fields are truly missing: Ask basic question with options
+   - If all fields have sufficient depth: Show Final Summary
+   - CRITICAL: You CANNOT finalize until all fields have depth and are confirmed
+
+═══════════════════════════════════════════════════════
+CRITICAL RULE: INFER FIRST, THEN GET DEPTH - ONE QUESTION AT A TIME
+═══════════════════════════════════════════════════════
+IF the user provides detailed information in one message:
+- Infer ALL fields from their description immediately
+- Ask DEEP clarifying questions to get MORE DETAILS on what they mentioned
+- CRITICAL: Ask ONLY ONE focused question at a time - never ask multiple questions in one response
+- Questions should EXPAND on what was mentioned, not ask for new basic info
+- Example: User says "customer support AI" → You infer: Purpose=customer support, Users=customers, Role=support agent
+- Then ask ONE DEEP question: "I see you want customer support. To make it perfect: Should it handle technical issues, billing questions, product usage, or all?"
+- Wait for answer, then ask next ONE question: "Should it escalate to humans or try to solve everything itself?"
+- Then ask ONE question about Tone: "For customer support, should it be friendly and patient, or quick and direct?"
+- Then ask ONE question about Rules: "I suggest: Always ask for account info before troubleshooting. Never share passwords. Escalate billing disputes. Agree?"
+- Then confirm Model/Temperature: "I'll use [model] at [temp]. OK?"
+- Then generate Examples based on what you learned
+- Then show Final Summary
+
+The goal is to get DEPTH on what they mentioned, not ask for basic info they already gave.
+ALWAYS ask ONE focused question per response - never combine multiple questions.
+
+═══════════════════════════════════════════════════════
+DOs and DON'Ts
+═══════════════════════════════════════════════════════
+DO:
+- Infer everything possible from the user's description first
+- CRITICAL: Ask ONLY ONE focused question at a time - never ask multiple questions in one response
+- For inferred fields: Ask ONE DEEP clarifying question to expand on what was mentioned
+- For missing fields: Ask ONE basic question with 2-4 smart options based on what the user already told you
+- Base all questions on what the user already told you
+- Use the wrap's actual name ({current_config.get('wrap_name', 'this wrap')}) instead of "wrap" or "AI"
+- Get MORE DEPTH on what they mentioned, not ask for basic info they already gave
+- Keep messages short and clear - one question, wait for answer, then next question
+- Trust your analysis - if inferred, ask for depth. If missing, ask basic question
+
+DON'T:
+- Ask for long lists or structured examples from the user
+- Ask multiple questions in one response - ALWAYS ask ONE question at a time
+- Skip any of the 10 checklist items
+- Finalize before all fields have depth and are confirmed
+- Use generic options that don't fit the user's context
+- Say "In your previous message..." (just say "So, you want...")
+- Rush to completion
+- Hardcode specific scenarios
+- Ask for basic info the user already provided - instead ask for MORE DEPTH on what they mentioned
+- Ask "What is the purpose?" if they already said "customer support" - instead ask "Should it handle technical issues, billing, or both?"
+- Combine questions like "What is the purpose? Who will use it?" - ask ONE at a time
+
+═══════════════════════════════════════════════════════
+THE COMPLETE WORKFLOW
+═══════════════════════════════════════════════════════
+STEP 1: Greeting & Initial Description
+- Greet briefly and warmly
+- Mention you're here to help build their wrap (use the wrap name if available)
+- Ask an open-ended question to help them think freely, like "What is {current_config.get('wrap_name', 'your wrap')}?" or "What would you like {current_config.get('wrap_name', 'your wrap')} to do?"
+- Keep it short and conversational - don't list all the steps upfront
+- Let the user describe their vision naturally
+
+Example: "Hi! I'm here to help you build {current_config.get('wrap_name', 'your wrap')}. What is {current_config.get('wrap_name', 'your wrap')}?"
+Alternative: "Hi! I'm here to help you build {current_config.get('wrap_name', 'your wrap')}. What would you like it to do?"
+
+STEP 2: Analyze & Infer
+- Read carefully and extract ALL information from user's description
+- Infer: Purpose, Target Users, Platform/Integration, Role, Tone, Domain, Rules, Format (everything possible)
+- Update your analysis block with inferred values
+- Ask ONE DEEP clarifying question: "I see you want [Role] for [Users] to [Purpose]. To make it perfect: [ask ONE focused question for depth/details]"
+- Example: "I see you want customer support. To make it perfect: Should it handle technical issues, billing, product questions, or all?"
+- Wait for answer, then ask next ONE question: "Should it escalate to humans or try to solve everything itself?"
+
+STEP 2.5: Platform/Integration Question (CRITICAL - Ask early, after Purpose/Users)
+- Ask: "Where will you use this wrap?"
+- Options: "1) Backend app/API, 2) Zapier, 3) Make.com, 4) Shopify/WooCommerce, 5) WordPress/Webflow, 6) Slack/Discord, 7) CRM (Salesforce/HubSpot), 8) Custom, 9) Other"
+- IMPORTANT: If user selects a platform (1-7), use your knowledge OR search online (if web_search_enabled) to suggest that platform's recommended response format
+- Platform-specific format recommendations (use these as defaults, but feel free to search for latest best practices):
+  * Zapier: JSON format with clear structure. Example: {{"output": "response text", "data": {{"key": "value"}}}}. Zapier expects JSON that can be parsed into fields.
+  * Make.com: Similar to Zapier - JSON format. Structure responses as JSON objects with clear field names.
+  * Shopify/WooCommerce: JSON format with e-commerce specific fields. Example: {{"message": "...", "product_id": "...", "action": "..."}}.
+  * WordPress/Webflow: HTML-friendly format or JSON. Can return HTML directly or JSON that gets rendered. Markdown also works well.
+  * Slack/Discord: Markdown format preferred. Use Slack's markdown syntax (bold, italic, code blocks, lists). JSON can work but markdown is more natural for chat.
+  * CRM (Salesforce/HubSpot): Structured JSON matching CRM object format. Example: {{"lead": {{"name": "...", "email": "..."}}, "status": "..."}}.
+  * Backend app/API: JSON format is standard. Example: {{"response": "...", "data": [...], "status": "success"}}.
+- If user selects "Custom", show: "For custom apps, I recommend JSON format like {{'response': '...', 'data': [...]}}. Would you like to use this or specify a different format?"
+- After user selects platform, acknowledge: "Got it! For [Platform], I'll configure it to return [recommended format]. Does that work for you?"
+- Save the platform choice and use it to tailor response format questions later
+
+STEP 3: Get Depth on Inferred Fields & Fill Missing Ones
+For each field, ask ONE question at a time, wait for answer, then move to next:
+
+- If INFERRED: Ask ONE DEEP clarifying question to expand on what was mentioned
+  - Purpose (inferred): "I see purpose is [X]. To make it perfect: [ask ONE focused question for depth - what specific scenarios, edge cases, etc.]"
+  - Target Users (inferred): "I see users are [Y]. To make it perfect: [ask ONE focused question for depth - skill level, use cases, etc.]"
+  - Platform (inferred): "I see you'll use it in [Platform]. Based on that platform's best practices, I recommend [format]. Does this work for you?"
+  - Role (inferred): "I see role is [Z]. To make it perfect: [ask ONE focused question for depth - specific responsibilities, boundaries, etc.]"
+  - Tone (inferred): "I see tone should be [T]. To make it perfect: [ask ONE focused question for depth - when to be formal vs casual, etc.]"
+  - Rules (inferred): "Based on what you said, I suggest: [list 3-5 specific rules]. Should I add/remove any?"
+  - Response Format (inferred): "I see format should be [F]. To make it perfect: [ask ONE focused question for depth - content style AND data structure]"
+
+- If MISSING: Ask ONE basic question with 2-4 smart options:
+  - Purpose: Suggest 2-4 specific purposes based on wrap name
+  - Target Users: Suggest 2-4 user types based on purpose
+  - Platform: Ask with options (Backend, Zapier, Make.com, Shopify, WordPress, Custom, Other)
+  - Role: Suggest 2-4 roles based on purpose and users
+  - Tone: Suggest 2-4 tones based on domain and users
+  - Rules: Suggest 2-4 rules based on domain
+  - Response Format: Ask TWO parts:
+    a) Content Style: "How should responses be structured? 1) Bullets, 2) Step-by-step, 3) Short paragraphs, 4) Summary first"
+    b) Data Format: "What data format do you need? 1) Plain text, 2) JSON, 3) Array, 4) Python code, 5) Custom"
+    - If platform was selected, use platform-specific recommendations
+    - If Custom platform, show recommended format and ask if they want to change it
+  - Model & Temperature: Show default from available_models, ask if OK
+
+STEP 4: Conditionals (Only if Enabled)
+- Thinking Mode (only if thinking_enabled): "When should [wrap name] use thinking mode?"
+- Web Search (only if web_search_enabled): "When should [wrap name] search the web?"
+- Documents (only if uploaded_documents): "How should [wrap name] use [document name]?"
+
+STEP 5: Generate Examples
+- Generate 2-3 realistic Q/A examples based on configuration
+- Show them and ask: "Do these examples look right?"
+
+STEP 6: Final Summary (ONLY when all fields have depth and are confirmed)
+Show complete summary:
+- Purpose: [value]
+- Target Users: [value]
+- Platform: [value] (Where it will be used)
+- Role: [value]
+- Tone: [value]
+- Rules: [value]
+- Response Format: [content style] + [data format] (e.g., "Step-by-step + JSON")
+- Model: [value]
+- Temperature: [value]
+- Examples: [shown above]
+
+Also mention: "API Response: The API will return responses in OpenAI-compatible format. Extract the content from 'choices[0].message.content' and parse it according to your selected data format."
+
+Ask: "Ready to build {current_config.get('wrap_name', 'your wrap')}?"
+
+STEP 7: Finalization (ON USER APPROVAL)
+- Generate final system prompt using template
+- Save to generated_system_prompt in the JSON output
+- Say: "Great! Your wrap is ready."
+
+CRITICAL FINALIZATION REQUIREMENT - YOU MUST RETURN ALL THESE FIELDS:
+When user confirms (says "yes", "sure", "perfect", "ready", etc.), you MUST return a complete JSON with ALL these fields filled based on what the user told you:
+
+{{
+  "response_message": "Great! Your wrap is ready.",
+  "role": "[The role you determined, e.g., 'Customer support agent']",
+  "instructions": "[The instructions you determined, e.g., 'Help users troubleshoot issues...']",
+  "model": "[The model from available_models, e.g., 'gpt-4o-mini']",
+  "tone": "[The tone you determined, e.g., 'Friendly']",
+  "rules": "[The rules you determined, e.g., 'Always ask for account info...']",
+  "purpose": "[The purpose you determined, e.g., 'Customer support']",
+  "target_users": "[The target users you determined, e.g., 'Customers']",
+  "response_format": "[The format you determined, e.g., 'step_by_step']",
+  "temperature": [The temperature value, e.g., 0.3],
+  "examples": "[The examples you generated, formatted as '1. Q: ... A: ...\\n2. Q: ... A: ...']",
+  "generated_system_prompt": "[The complete system prompt you generated]"
+}}
+
+STRICT RULES:
+- ALL fields above MUST be present in your JSON response
+- NO field can be missing, null, or empty string
+- Fill each field based on what the user told you during the conversation
+- If you don't have a value for a field, use a sensible default based on the user's description
+- Without ALL these fields, Test Chat will be LOCKED and the wrap will not work
+
+CRITICAL: You MUST include the "generated_system_prompt" field in your JSON response when you finalize. Without this, the wrap is not configured and Test Chat will not work.
+
+═══════════════════════════════════════════════════════
+OUTPUT FORMAT (JSON STRUCTURE)
+═══════════════════════════════════════════════════════
+Return ONLY valid JSON (no markdown, no code blocks).
+
+Required Structure:
+{{
+  "analysis": {{
+    "purpose_status": "confirmed/inferred/missing",
+    "users_status": "confirmed/inferred/missing",
+    "role_status": "confirmed/inferred/missing",
+    "tone_status": "confirmed/inferred/missing",
+    "rules_status": "confirmed/inferred/missing",
+    "format_status": "confirmed/inferred/missing",
+    "model_status": "confirmed/inferred/missing",
+    "temperature_status": "confirmed/inferred/missing",
+    "examples_status": "confirmed/inferred/missing",
+    "missing_fields": ["list", "of", "missing", "fields"],
+    "next_step": "What you plan to do next"
+  }},
+  "response_message": "The text you want to show to the user",
+  "role": "...", (REQUIRED - Test Chat needs this)
+  "instructions": "...", (REQUIRED - Test Chat needs this)
+  "purpose": "...",
+  "target_users": "...",
+  "platform": "...", (Where wrap will be used: Backend, Zapier, Make.com, Shopify, WordPress, Custom, etc.)
+  "tone": "Must be one of: Casual, Direct, Friendly, Professional, Supportive, Technical",
+  "rules": "...",
+  "response_format": "...", (Content style AND data format, e.g., "step_by_step + JSON")
+  "model": "Must be from Available Models list - NEVER empty", (REQUIRED - Test Chat needs this)
+  "temperature": 0.3,
+  "examples": "...",
+  "generated_system_prompt": "..." (REQUIRED when finalizing - Test Chat needs this)
+}}
+
+CRITICAL: When finalizing (user confirms), ALL fields above MUST be present. Missing role, instructions, or model will LOCK Test Chat.
+
+ALWAYS include response_message - this is the ONLY way the user will see what you say.
+
+CRITICAL: On the FIRST message (greeting), ONLY return response_message. Do NOT set tone, model, or any other config fields yet. Wait until you have valid values from the user's description.
+
+═══════════════════════════════════════════════════════
+ADDITIONAL RULES
+═══════════════════════════════════════════════════════
+- Be clear, direct, and practical
+- No stories, no jokes, no metaphors, no role-play
+- Use short messages
+- Give 2-4 options to help user decide faster
+- Reuse the user's own wording and domain terms
+- Never ask the user to write long bullet lists
+- Instead, propose options and the user chooses or edits
+
+TROUBLESHOOTING:
+- If the user says "Test Chat is not working" or "It's not popping up", it means you haven't successfully saved the configuration.
+- Check: Did you include "generated_system_prompt" in your last JSON response?
+- Check: Did you include ALL required fields (model, tone, examples, etc.)?
+- Action: Apologize and immediately regenerate the FULL JSON with all fields and "generated_system_prompt".
+"""
+        # ===== End System Prompt =====
+        
+        # Check if user message contains confirmation words/phrases
+        confirmation_keywords = [
+            "yes", "yep", "yeah", "sure", "ok", "okay", "create", "create it", 
+            "go ahead", "proceed", "let's do it", "build it", "make it", "do it", 
+            "ready", "let's go", "sounds good", "perfect", "great", "alright", 
+            "fine", "confirm", "approved", "accept", "agree", "why waiting", 
+            "why not", "just create", "just do it", "sure create", "sure go ahead"
+        ]
+        user_message_lower = message.lower().strip()
+        is_confirmation = any(keyword in user_message_lower for keyword in confirmation_keywords)
+        
+        # Helper: build a sane default config using current values + defaults
+        def _default_config_from_current(cfg: Dict[str, Any]) -> Dict[str, Any]:
+            # Choose a model from available_models if possible
+            def pick_model() -> str:
+                avail = cfg.get("available_models")
+                if isinstance(avail, list) and avail:
+                    # Prefer a GPT-5 Mini variant, then gpt-4o-mini, then first available
+                    preferred = [
+                        m for m in avail 
+                        if isinstance(m, str) and (
+                            "gpt-5-mini" in m.lower() or "5-mini" in m.lower()
+                        )
+                    ]
+                    if preferred:
+                        return preferred[0]
+                    preferred = [
+                        m for m in avail
+                        if isinstance(m, str) and (
+                            "gpt-4o-mini" in m.lower() or "4o-mini" in m.lower()
+                        )
+                    ]
+                    if preferred:
+                        return preferred[0]
+                    preferred = [
+                        m for m in avail
+                        if isinstance(m, str) and ("gpt-4o" in m.lower())
+                    ]
+                    if preferred:
+                        return preferred[0]
+                    return str(avail[0])
+                # Fallback if no list provided
+                return cfg.get("model") or "gpt-5-mini"
+
+            wrap_name = cfg.get("wrap_name") or "this wrap"
+            project_name = cfg.get("project_name") or "this project"
+
+            role = cfg.get("role") or f"Assistant that helps with {project_name}"
+            # Ensure allowed tone: only allowed values, optionally combine two with ' + ' (space-padded)
+            allowed_tones = ["Casual", "Direct", "Friendly", "Professional", "Supportive", "Technical"]
+            def pick_tone(value):
+                # If value is already an allowed tone or valid combo, return
+                if isinstance(value, str):
+                    parts = [s.strip().capitalize() for s in value.split("+")]
+                    if 1 <= len(parts) <= 2 and all(p in allowed_tones for p in parts):
+                        return " + ".join(parts)
+                return "Professional"  # fallback
+            tone = pick_tone(cfg.get("tone") or "Professional")
+            instructions = cfg.get("instructions") or (
+                "Ask brief clarifying questions when needed.\n"
+                "Provide step-by-step solutions.\n"
+                "Be concise and specific.\n"
+                "Show final answers first, then details if helpful."
+            )
+            behavior = cfg.get("behavior") or "Focus on actionable, accurate answers."
+            rules = cfg.get("rules") or (
+                "DO: Stay within the user's request and this project's scope.\n"
+                "DO: Cite sources or assumptions when relevant.\n"
+                "DON'T: Hallucinate facts or fabricate capabilities.\n"
+                "DON'T: Provide unsafe or destructive instructions."
+            )
+            # Provide at least 5 numbered Q/A pairs to satisfy validation
+            examples = cfg.get("examples") or (
+                "1. Q: What can you do? A: I can help with tasks in this project, answer questions, and provide step-by-step guidance.\n"
+                "2. Q: Set the model to gpt-4o-mini. A: Model set to gpt-4o-mini with balanced settings.\n"
+                "3. Q: Explain a feature quickly. A: Summary first, then a short list of steps to use it.\n"
+                "4. Q: If unsure, what will you do? A: I will ask a clarifying question before proceeding.\n"
+                "5. Q: Can you search the web? A: Only if enabled; otherwise I answer from general knowledge and context."
+            )
+
+            model_name = pick_model()
+            # Defensive: Model must be non-empty and from available_models
+            avail = cfg.get("available_models")
+            if not model_name or not isinstance(model_name, str) or (isinstance(avail, list) and avail and model_name not in avail):
+                model_name = avail[0] if avail and isinstance(avail, list) and len(avail) > 0 else "gpt-5-mini"
+            # Use higher token window for gpt-5-mini
+            if isinstance(model_name, str) and "gpt-5-mini" in model_name.lower():
+                max_tokens = cfg.get("max_tokens", 200000)
+            else:
+                max_tokens = cfg.get("max_tokens", 1024)
+            temperature = cfg.get("temperature", 0.3)
+            top_p = cfg.get("top_p", 1.0)
+            frequency_penalty = cfg.get("frequency_penalty", 0.0)
+            thinking_mode = cfg.get("thinking_mode") or ("off")
+            web_search_mode = cfg.get("web_search") or ("off")
+
+            response_message = (
+                f"Created a complete config for {wrap_name}. Model: {model_name}; Tone: {tone}. "
+                "You can adjust any field or apply these changes."
+            )
+
+            return {
+                "role": role,
+                "instructions": instructions,
+                "rules": rules,
+                "behavior": behavior,
+                "tone": tone,
+                "examples": examples,
+                "model": model_name,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+                "top_p": top_p,
+                "frequency_penalty": frequency_penalty,
+                "thinking_mode": thinking_mode,
+                "web_search": web_search_mode,
+                "response_message": response_message,
+            }
+
+        # If user confirmed, immediately produce a complete config using defaults without relying on LLM
+        # Disabled to always use LLM-driven parsing/confirmation so stepwise process is followed and validation rules are respected
+        # if is_confirmation:
+        #     logger.info("Config chat: user confirmed creation; auto-filling defaults where missing and returning complete config.")
+        #     return _default_config_from_current(current_config)
+
+        # If not a confirmation, continue with LLM-driven parsing
+        
+        # If user confirmed and we have enough info, add explicit instruction to create (legacy behavior)
+        # Note: kept for backward compatibility if future code removes early-return above
+        # by toggling this branch.
+        # (This block is effectively bypassed now because of the early return.)
+        # if is_confirmation and has_minimum_fields:
+        #     system_prompt += "\n\nCRITICAL: USER JUST CONFIRMED CREATION..."
+        
+        # Build message history: system + prior history + current user message
+        convo: List[Dict[str, str]] = [{"role": "system", "content": system_prompt}]
+        if history:
+            # history expected as list of {role, content}
+            convo.extend(history)
+        convo.append({"role": "user", "content": message})
+
+        # Use OpenAI JSON mode; fallback if provider rejects response_format
+        try:
+            response = client.chat.completions.create(
+                model=settings.openai_model,  # Configurable model (default: gpt-4o-mini)
+                messages=convo,
+                temperature=0.3,
+                max_tokens=2000,
+                response_format={"type": "json_object"}
+            )
+        except Exception as e:
+            emsg = str(e).lower()
+            if "must contain the word 'json'" in emsg and "response_format" in emsg:
+                # Retry without response_format; add explicit lowercase json instruction
+                convo_fb = list(convo)
+                convo_fb.insert(1, {"role": "system", "content": "Return only valid json. No markdown, no code fences, no extra text."})
+                response = client.chat.completions.create(
+                    model=settings.openai_model,
+                    messages=convo_fb,
+                    temperature=0.3,
+                    max_tokens=2000
+                )
+            else:
+                raise
+        
+        result_text = response.choices[0].message.content.strip()
+        logger.info(f"Raw OpenAI response: {result_text[:200]}")
+        
+        # Extract JSON from response (might have markdown code blocks)
+        if result_text.startswith("```"):
+            # Find the first ``` and the next ```
+            parts = result_text.split("```")
+            if len(parts) >= 2:
+                # Get content between first and second ```
+                code_content = parts[1]
+                # Remove "json" prefix if present
+                if code_content.startswith("json"):
+                    code_content = code_content[4:]
+                result_text = code_content.strip()
+            else:
+                # Try to extract JSON from markdown
+                result_text = result_text.replace("```json", "").replace("```", "").strip()
+        
+        # Try to find JSON object in the text (in case there's extra text)
+        json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', result_text, re.DOTALL)
+        if json_match:
+            result_text = json_match.group(0)
+        
+        result_text = result_text.strip()
+        logger.info(f"Extracted JSON text: {result_text[:200]}")
+        
+        try:
+            parsed = json.loads(result_text)
+            logger.info(f"Successfully parsed command: {parsed}")
+
+            # --- PATCH: Only apply/validate config if all required fields are valid ---
+            required_fields = ["tone", "model"]
+            def valid_model_field():
+                model_val = parsed.get("model")
+                avail = current_config.get("available_models", [])
+                return bool(model_val) and isinstance(model_val, str) and model_val in avail
+            def valid_examples_field():
+                examples_val = parsed.get("examples")
+                if examples_val is None:
+                    examples_val = ""
+                # Handle list case - convert to string
+                if isinstance(examples_val, list):
+                    examples_val = "\n".join(str(item) for item in examples_val)
+                # Ensure it's a string
+                if not isinstance(examples_val, str):
+                    examples_val = str(examples_val) if examples_val else ""
+                # Examples must have at least 2 Q/A pairs in proper format (matching system prompt's request for 2-3)
+                import re as _re
+                matches = _re.findall(r'\d+\. Q: .*?A: .*?(?=\d+\. Q: |$)', examples_val, _re.DOTALL)
+                return isinstance(examples_val, str) and len(matches) >= 2
+            # On first message, or while model/examples are invalid, just show response_message
+            if (
+                "response_message" in parsed and
+                (
+                    not valid_model_field() or not valid_examples_field()
+                )
+            ):
+                logger.info(f"[Config Chat] Returning greeting/step: response_message only (no config update). Model valid: {valid_model_field()}, Examples valid: {valid_examples_field()}. Parsed: {parsed}")
+                return {"response_message": parsed["response_message"]}
+            # Always log the full parsed response for every turn
+            logger.info(f"[Config Chat] LLM parsed output: {parsed}")
+            
+            # Normalize examples if it's a list (convert to string)
+            if "examples" in parsed and isinstance(parsed["examples"], list):
+                parsed["examples"] = "\n".join(str(item) for item in parsed["examples"])
+            
+            # If user confirmed and we have minimum fields, try to fill missing ones from current_config
+            if is_confirmation:
+                logger.info(f"[Config Chat] User confirmed. Checking if we can finalize with current config...")
+                # Fill missing fields from current_config if not in parsed (CRITICAL: include instructions for Test Chat)
+                for field in ["tone", "model", "rules", "purpose", "role", "instructions", "response_format", "temperature", "examples"]:
+                    if not parsed.get(field) and current_config.get(field):
+                        parsed[field] = current_config[field]
+                        logger.info(f"[Config Chat] Filled missing {field} from current_config")
+            
+            # When config is complete, mark status as ready, else show full missing info
+            # CRITICAL: instructions is required for Test Chat to unlock
+            # Note: platform is optional but recommended
+            required_final_fields = ["tone", "model", "rules", "purpose", "role", "instructions", "response_format", "temperature", "examples", "generated_system_prompt", "response_message"]
+            missing_final = [f for f in required_final_fields if not parsed.get(f)]
+            
+            # Detailed logging for debugging
+            logger.info(f"🔍 [Config Chat] Finalization check:")
+            logger.info(f"🔍 [Config Chat] Required fields: {required_final_fields}")
+            logger.info(f"🔍 [Config Chat] Parsed fields present: {[f for f in required_final_fields if parsed.get(f)]}")
+            logger.info(f"🔍 [Config Chat] Missing fields: {missing_final}")
+            logger.info(f"🔍 [Config Chat] Model valid: {valid_model_field()}")
+            logger.info(f"🔍 [Config Chat] Examples valid: {valid_examples_field()}")
+            logger.info(f"🔍 [Config Chat] Critical Test Chat fields check:")
+            logger.info(f"   - role: {'✅' if parsed.get('role') else '❌ MISSING'} = {parsed.get('role', 'NONE')[:50] if parsed.get('role') else 'NONE'}")
+            logger.info(f"   - instructions: {'✅' if parsed.get('instructions') else '❌ MISSING'} = {parsed.get('instructions', 'NONE')[:50] if parsed.get('instructions') else 'NONE'}")
+            logger.info(f"   - model: {'✅' if parsed.get('model') else '❌ MISSING'} = {parsed.get('model', 'NONE')}")
+            
+            if valid_model_field() and valid_examples_field() and not missing_final:
+                parsed["config_status"] = "ready"
+                logger.info(f"✅ [Config Chat] FINAL CONFIG: All required fields present. Will save/unlock with config")
+                logger.info(f"✅ [Config Chat] Config status set to 'ready'")
+            else:
+                logger.warning(
+                    f"❌ [Config Chat] FINALIZATION BLOCKED! Missing fields: {missing_final} | "
+                    f"Model valid: {valid_model_field()} | Examples valid: {valid_examples_field()}"
+                )
+                logger.warning(f"❌ [Config Chat] This means Test Chat will remain LOCKED!")
+                logger.warning(f"❌ [Config Chat] Parsed keys: {list(parsed.keys())}")
+                parsed["config_status"] = "incomplete"
+                # Don't show error message if user just confirmed - let AI handle it gracefully
+                if not is_confirmation:
+                    parsed["error"] = "Finalization missing required fields."
+                    parsed["response_message"] = (
+                        f"Some required config fields are missing: {', '.join(missing_final)}. "
+                        "See console/logs for details. Please restart summary/finalization or contact support."
+                    )
+            return parsed
+        except json.JSONDecodeError as json_err:
+            logger.error(f"Failed to parse JSON from OpenAI response: {json_err}")
+            logger.error(f"JSON text that failed: {result_text}")
+            # Try to provide a more helpful error message
+            error_msg = f"JSON parsing failed: {str(json_err)}"
+            return {"error": error_msg}
+        
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse JSON from OpenAI response: {e}")
+        logger.error(f"Response text: {result_text if 'result_text' in locals() else 'N/A'}")
+        return {"error": f"Failed to parse command: {str(e)}"}
+    except Exception as e:
+        logger.error(f"Error parsing chat command: {e}", exc_info=True)
+        return {"error": str(e)}
+
+
+def build_system_prompt(prompt_config: Optional[PromptConfig]) -> str:
+    """
+    Combine prompt_config fields into a single system prompt
+    """
+    if not prompt_config:
+        return ""
+    
+    parts = []
+    
+    if prompt_config.role:
+        parts.append(f"You are: {prompt_config.role}")
+    
+    if prompt_config.instructions:
+        # Extract platform and response_format from instructions if they exist
+        import re
+        instructions_text = prompt_config.instructions
+        platform_match = re.search(r'(?i)platform[:\s]+([^\n]+)', instructions_text)
+        format_match = re.search(r'(?i)response[_\s]?format[:\s]+([^\n]+)', instructions_text)
+        
+        # Remove platform/format lines from instructions before adding
+        clean_instructions = re.sub(r'(?i)(platform|response[_\s]?format)[:\s]+[^\n]+\n?', '', instructions_text).strip()
+        
+        if clean_instructions:
+            parts.append(f"\nInstructions:\n{clean_instructions}")
+        
+        # Add platform and format as separate sections if found
+        if platform_match:
+            parts.append(f"\nPlatform/Integration: {platform_match.group(1).strip()}")
+        if format_match:
+            parts.append(f"\nResponse Format: {format_match.group(1).strip()}")
+    
+    if prompt_config.rules:
+        parts.append(f"\nRules to follow:\n{prompt_config.rules}")
+    
+    if prompt_config.behavior:
+        parts.append(f"\nBehavior:\n{prompt_config.behavior}")
+    
+    if prompt_config.tone:
+        parts.append(f"\nTone: {prompt_config.tone}")
+    
+    if prompt_config.examples:
+        parts.append(f"\nExamples:\n{prompt_config.examples}")
+
+    # Non-sensitive guidance for planning and tools
+    parts.append(
+        "\nGuidance:\n"
+        "- For complex/ambiguous tasks, first outline a brief plan (3–6 bullet steps), then provide the final answer.\n"
+        "- If web search is enabled, state when you searched and cite sources concisely.\n"
+        "- Keep the plan high-level; do not expose hidden chain-of-thought."
+    )
+    
+    return "\n".join(parts).strip()
+
+
+async def call_wrapped_llm(
+    wrapped_api: WrappedAPI,
+    messages: list,
+    tools: Optional[list] = None,
+    db_session = None
+) -> Dict[str, Any]:
+    """
+    Call LiteLLM with system prompt and messages
+    Returns response in OpenAI-compatible format
+    """
+    import litellm
+    from app.models.llm_provider import LLMProvider
+    from sqlalchemy.orm import selectinload
+    from sqlalchemy import select
+    from app.database import AsyncSessionLocal
+    from cryptography.fernet import Fernet
+    from app.config import settings
+    
+    # Encryption helper - use same logic as llm_providers router
+    def decrypt_api_key(encrypted_key: str) -> str:
+        """Decrypt API key using same cipher as llm_providers"""
+        _encryption_key = getattr(settings, 'encryption_key', None)
+        if not _encryption_key:
+            raise ValueError("ENCRYPTION_KEY not configured")
+        try:
+            if isinstance(_encryption_key, str):
+                cipher_suite = Fernet(_encryption_key.encode())
+            else:
+                cipher_suite = Fernet(_encryption_key)
+            return cipher_suite.decrypt(encrypted_key.encode()).decode()
+        except Exception as e:
+            logger.error(f"Decryption error: {e}")
+            logger.error("This usually means the LLM provider was encrypted with a different ENCRYPTION_KEY.")
+            logger.error("Solution: Delete and re-add your LLM providers after setting ENCRYPTION_KEY in .env")
+            raise ValueError("Failed to decrypt API key - LLM provider may have been encrypted with a different key. Please delete and re-add your LLM provider in the dashboard.")
+    
+    # Use provided session or create new one
+    if db_session:
+        db = db_session
+        should_close = False
+    else:
+        db = AsyncSessionLocal()
+        should_close = True
+    
+    try:
+        wx_events: List[Dict[str, Any]] = []
+        # Get provider
+        provider_result = await db.execute(
+            select(LLMProvider)
+            .where(LLMProvider.id == wrapped_api.provider_id)
+            .options(selectinload(LLMProvider.project))
+        )
+        provider = provider_result.scalar_one_or_none()
+        
+        if not provider:
+            raise ValueError("LLM Provider not found")
+        
+        # Decrypt API key
+        api_key = decrypt_api_key(provider.api_key)
+        
+        # Build system prompt
+        system_prompt = build_system_prompt(wrapped_api.prompt_config)
+        # Append thinking/web search configuration for clearer behavior
+        try:
+            tm = getattr(wrapped_api, 'thinking_mode', None)
+            tf = getattr(wrapped_api, 'thinking_focus', None)
+            ws = getattr(wrapped_api, 'web_search', None)
+            wst = getattr(wrapped_api, 'web_search_triggers', None)
+            config_lines = []
+            if tm and tm != 'off':
+                config_lines.append(f"Thinking: {tm}{' — Focus: ' + tf if tf else ''}")
+            if (ws and ws != 'off') or getattr(wrapped_api, 'web_search_enabled', False):
+                trig = f" — Triggers: {wst}" if wst else ''
+                config_lines.append(f"Web Search: {ws or ('enabled' if getattr(wrapped_api, 'web_search_enabled', False) else 'off')}{trig}")
+            if config_lines:
+                system_prompt = (system_prompt + "\n\n" + "\n".join(config_lines)).strip()
+        except Exception:
+            pass
+        
+        # Prepare messages with system prompt
+        formatted_messages = []
+        if system_prompt:
+            formatted_messages.append({"role": "system", "content": system_prompt})
+        formatted_messages.extend(messages)
+        
+        # Get model - use provider-specific defaults
+        default_models = {
+            "openai": "gpt-3.5-turbo",
+            "anthropic": "claude-3-haiku-20240307",
+            "deepseek": "deepseek-chat",
+            "groq": "llama-3.1-8b-instant",
+            "gemini": "gemini-pro",
+            "mistral": "mistral-tiny",
+            "cohere": "command",
+            "together_ai": "meta-llama/Llama-2-7b-chat-hf",
+            "perplexity": "llama-3.1-sonar-small-128k-online",
+            "anyscale": "meta-llama/Llama-2-7b-chat-hf",
+            "azure": "gpt-3.5-turbo",
+            "openrouter": "openai/gpt-3.5-turbo",
+        }
+        default_model = default_models.get(provider.provider_name, "gpt-3.5-turbo")
+        model = wrapped_api.model or default_model
+        
+        # Format model string for LiteLLM
+        if "/" not in model and provider.provider_name != "custom":
+            model_str = f"{provider.provider_name}/{model}"
+        else:
+            model_str = model
+        
+        # Prepare parameters
+        params = {
+            "model": model_str,
+            "messages": formatted_messages,
+            "api_key": api_key,
+        }
+        
+        # Add optional parameters if set
+        if wrapped_api.temperature is not None:
+            params["temperature"] = wrapped_api.temperature
+        if wrapped_api.max_tokens is not None:
+            params["max_completion_tokens"] = wrapped_api.max_tokens
+        if wrapped_api.top_p is not None:
+            params["top_p"] = wrapped_api.top_p
+        if wrapped_api.frequency_penalty is not None:
+            params["frequency_penalty"] = wrapped_api.frequency_penalty
+        
+        if provider.api_base_url:
+            params["api_base"] = provider.api_base_url
+        
+        # Define web_search tool if none explicitly provided
+        def tool_defs() -> List[dict]:
+            return [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "web_search",
+                        "description": "Search the web and return a concise summary of top results with sources.",
+                        "parameters": {
+                            "type": "object",
+                            "properties": {
+                                "query": {"type": "string"},
+                                "max_results": {"type": "integer", "minimum": 1, "maximum": 10, "default": 5}
+                            },
+                            "required": ["query"]
+                        }
+                    }
+                }
+            ]
+
+        # Check if web_search is enabled via enum or legacy toggle
+        web_search_mode = getattr(wrapped_api, "web_search", None)
+        web_search_enabled_toggle = getattr(wrapped_api, "web_search_enabled", False)
+        web_search_active = (web_search_mode is not None and web_search_mode != "off") or web_search_enabled_toggle
+        if web_search_active:
+            params["tools"] = tools if tools else tool_defs()
+        else:
+            params["tools"] = tools if tools else []
+
+        # Helper to execute web search
+        def execute_web_search(query: str, max_results: int = 5) -> str:
+            serper_key = os.getenv("SERPER_API_KEY")
+            tavily_key = os.getenv("TAVILY_API_KEY")
+            try:
+                if serper_key:
+                    req = urllib.request.Request(
+                        url="https://google.serper.dev/search",
+                        data=json.dumps({"q": query, "num": max_results}).encode("utf-8"),
+                        headers={"Content-Type": "application/json", "X-API-KEY": serper_key},
+                        method="POST",
+                    )
+                    with urllib.request.urlopen(req, timeout=15) as resp:
+                        data = json.loads(resp.read().decode("utf-8"))
+                    results = data.get("organic", [])[:max_results]
+                    lines = [
+                        f"- {r.get('title')}: {r.get('snippet')} (source: {r.get('link')})"
+                        for r in results
+                    ]
+                    return "Search results:\n" + "\n".join(lines) if lines else "No results found."
+                elif tavily_key:
+                    req = urllib.request.Request(
+                        url="https://api.tavily.com/search",
+                        data=json.dumps({"api_key": tavily_key, "query": query, "max_results": max_results}).encode("utf-8"),
+                        headers={"Content-Type": "application/json"},
+                        method="POST",
+                    )
+                    with urllib.request.urlopen(req, timeout=15) as resp:
+                        data = json.loads(resp.read().decode("utf-8"))
+                    results = data.get("results", [])[:max_results]
+                    lines = [
+                        f"- {r.get('title')}: {r.get('content')} (source: {r.get('url')})"
+                        for r in results
+                    ]
+                    return "Search results:\n" + "\n".join(lines) if lines else "No results found."
+                else:
+                    return "Web search not configured. Set SERPER_API_KEY or TAVILY_API_KEY."
+            except (HTTPError, URLError, TimeoutError) as e:
+                logger.error(f"Web search error: {e}")
+                return f"Web search failed: {e}"
+            except Exception as e:
+                logger.error(f"Web search unexpected error: {e}")
+                return f"Web search failed: {e}"
+        
+        # If thinking is enabled, note start
+        # Check both the new boolean toggle and legacy thinking_mode string
+        thinking_enabled = getattr(wrapped_api, "thinking_enabled", False)
+        thinking_mode = getattr(wrapped_api, "thinking_mode", None)
+        thinking_focus = getattr(wrapped_api, "thinking_focus", None)
+        
+        # Enable thinking if either the boolean toggle is on OR the legacy mode is not "off"
+        if thinking_enabled or (thinking_mode and thinking_mode != "off"):
+            thinking_event = {"type": "thinking_started"}
+            if thinking_focus:
+                thinking_event["focus"] = thinking_focus
+            wx_events.append(thinking_event)
+
+        # Call LiteLLM with safe fallback for provider-specific constraints (e.g., temperature unsupported)
+        async def _acompletion_with_fallback(p: Dict[str, Any]):
+            try:
+                return await litellm.acompletion(**p)
+            except Exception as e:
+                msg = str(e)
+                # Some providers/models only accept default temperature=1 or disallow the param entirely
+                temp_err = (
+                    "temperature" in msg and (
+                        "unsupported" in msg.lower() or
+                        "unsupported_value" in msg.lower() or
+                        "only the default (1)" in msg.lower()
+                    )
+                )
+                if temp_err:
+                    # Retry without temperature
+                    p2 = dict(p)
+                    p2.pop("temperature", None)
+                    try:
+                        return await litellm.acompletion(**p2)
+                    except Exception:
+                        # Last attempt with explicit default = 1
+                        p3 = dict(p2)
+                        p3["temperature"] = 1
+                        return await litellm.acompletion(**p3)
+                raise
+
+        # Call LiteLLM (first pass)
+        response = await _acompletion_with_fallback(params)
+
+        # Preserve tool_calls if present
+        def to_message(choice_obj) -> Dict[str, Any]:
+            if hasattr(choice_obj.message, 'model_dump'):
+                return choice_obj.message.model_dump()
+            msg = {
+                "role": getattr(choice_obj.message, 'role', 'assistant'),
+                "content": getattr(choice_obj.message, 'content', None)
+            }
+            tool_calls = getattr(choice_obj.message, 'tool_calls', None)
+            if tool_calls:
+                try:
+                    msg["tool_calls"] = [tc.model_dump() if hasattr(tc, 'model_dump') else tc for tc in tool_calls]
+                except Exception:
+                    msg["tool_calls"] = tool_calls
+            return msg
+
+        first_choice = response.choices[0]
+        assistant_msg = to_message(first_choice)
+        
+        # Extract thinking content if available (from assistant message content before tool calls)
+        thinking_content = None
+        if thinking_mode and thinking_mode != "off":
+            # Check if assistant message contains thinking/planning content
+            content = assistant_msg.get("content", "")
+            if content and not assistant_msg.get("tool_calls"):
+                # If content exists and no tool calls, this might be thinking content
+                thinking_content = content.strip()
+            elif content:
+                # If both content and tool calls exist, content might be thinking
+                thinking_content = content.strip() if content.strip() else None
+        
+        # If thinking content found, add to events
+        if thinking_content:
+            wx_events.append({
+                "type": "thinking_content",
+                "content": thinking_content
+            })
+
+        # Handle one round of tool calls (web_search)
+        tool_calls = assistant_msg.get("tool_calls") or []
+        if tool_calls:
+            # Append the assistant message that contains tool_calls first
+            formatted_messages.append({
+                "role": "assistant",
+                **{k: v for k, v in assistant_msg.items() if k in ("content", "tool_calls")}
+            })
+            for tc in tool_calls:
+                fn = tc.get("function", {})
+                name = fn.get("name")
+                args_str = fn.get("arguments") or "{}"
+                try:
+                    args = json.loads(args_str) if isinstance(args_str, str) else args_str
+                except Exception:
+                    args = {"query": str(args_str)}
+                # Emit event for UI with dynamic tool information
+                tool_call_event = {"type": "tool_call", "name": name or "tool"}
+                if args:
+                    tool_call_event["args"] = args
+                wx_events.append(tool_call_event)
+                
+                if name == "web_search":
+                    query = args.get("query", "")
+                    max_results = int(args.get("max_results", 5))
+                    result_text = execute_web_search(query, max_results)
+                    # Add search result summary to event
+                    wx_events.append({
+                        "type": "tool_result",
+                        "name": name or "tool",
+                        "query": query,
+                        "results_count": len(result_text.split("\n")) if result_text else 0
+                    })
+                else:
+                    result_text = f"Tool '{name}' is not implemented."
+                    wx_events.append({"type": "tool_result", "name": name or "tool"})
+                formatted_messages.append({
+                    "role": "tool",
+                    "tool_call_id": tc.get("id", "toolcall-1"),
+                    "name": name or "tool",
+                    "content": result_text,
+                })
+            # Second pass with tool output
+            params["messages"] = formatted_messages
+            response = await _acompletion_with_fallback(params)
+            first_choice = response.choices[0]
+            assistant_msg = to_message(first_choice)
+
+        # Thinking complete
+        if any(ev.get("type") == "thinking_started" for ev in wx_events):
+            wx_events.append({"type": "thinking_completed"})
+        
+        # Format response in OpenAI-compatible format
+        return {
+            "id": f"chatcmpl-{wrapped_api.id}-{hash(str(messages))}",
+            "object": "chat.completion",
+            "created": int(__import__("time").time()),
+            "model": model_str,
+            "choices": [
+                {
+                    "index": 0,
+                    "message": assistant_msg,
+                    "finish_reason": getattr(first_choice, 'finish_reason', 'stop')
+                }
+            ],
+            "usage": {
+                "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
+                "completion_tokens": response.usage.completion_tokens if response.usage else 0,
+                "total_tokens": response.usage.total_tokens if response.usage else 0
+            },
+            "wx_events": wx_events
+        }
+    except Exception as e:
+        logger.error(f"Error calling wrapped LLM: {e}")
+        raise
+    finally:
+        # Only close if we created the session
+        if should_close:
+            await db.close()

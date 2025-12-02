@@ -18,14 +18,12 @@
   flex: 1;
   overflow-y: auto; /* Chat card scrolls here */
   overflow-x: hidden;
-  padding: 0 1.5rem 0 1.5rem; /* No top/bottom padding, only sides */
+  padding: 0.75rem 1.5rem 8rem 1.5rem; /* Reduced top padding for more aggressive scroll, extra bottom padding for input bar */
   display: flex;
   flex-direction: column;
   gap: 1rem;
   position: relative;
   z-index: 1;
-  /* Padding bottom for input space is handled by input wrapper */
-  padding-bottom: 100px; /* Space for sticky input */
 }
 
 .chat-messages-container::-webkit-scrollbar {
@@ -50,8 +48,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 100%;
-  padding: 1.5rem;
+  width: 100%;
+  min-height: auto;
+  padding: 2rem 1.5rem;
   animation: fadeIn 0.6s ease;
 }
 
@@ -334,30 +333,97 @@
 /* Streaming caret for assistant while streaming */
 .stream-caret {
   display: inline-block;
-  width: 8px;
+  width: 2px;
   height: 1em;
   background: rgba(255, 255, 255, 0.8);
-  margin-left: 2px;
+  margin-left: 4px;
+  vertical-align: text-bottom;
   animation: blink 1s step-end infinite;
+  position: relative;
+  top: 1px;
 }
 
 @keyframes blink {
-  50% { opacity: 0; }
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0.3; }
 }
 
-/* Status Messages */
+/* Status Messages - Clean, subtle like Cursor AI */
 .message.status-message .message-content {
-  background: rgba(59, 130, 246, 0.15);
-  color: rgba(147, 197, 253, 0.9);
-  border: 1px solid rgba(59, 130, 246, 0.3);
-  font-size: 0.85rem;
-  font-style: italic;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.5);
+  border: none;
+  font-size: 0.75rem;
+  font-style: normal;
+  font-weight: 400;
+  padding: 0.25rem 0;
+  margin: 0.25rem 0;
 }
 
-.message.status-processing .message-content {
-  background: rgba(147, 51, 234, 0.15);
-  color: rgba(196, 181, 253, 0.9);
-  border: 1px solid rgba(147, 51, 234, 0.3);
+/* Thinking Status Styles - Subtle and clean */
+.message.status-thinking .message-content {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 0.75rem;
+  font-weight: 400;
+  padding: 0.25rem 0;
+}
+
+.message.status-thinking .stream-caret {
+  background: rgba(255, 255, 255, 0.7);
+  width: 2px;
+  height: 1em;
+  margin-left: 4px;
+  vertical-align: text-bottom;
+  position: relative;
+  top: 1px;
+}
+
+/* Reasoning Status Styles - Subtle and clean */
+.message.status-reasoning .message-content {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 0.75rem;
+  font-weight: 400;
+  padding: 0.25rem 0;
+}
+
+.message.status-reasoning .stream-caret {
+  background: rgba(255, 255, 255, 0.7);
+  width: 2px;
+  height: 1em;
+  margin-left: 4px;
+  vertical-align: text-bottom;
+  position: relative;
+  top: 1px;
+}
+
+/* Web Search Status Styles - Subtle and clean */
+.message.status-web_search .message-content {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 0.75rem;
+  font-weight: 400;
+  padding: 0.25rem 0;
+}
+
+.message.status-web_search .stream-caret {
+  background: rgba(255, 255, 255, 0.7);
+  width: 2px;
+  height: 1em;
+  margin-left: 4px;
+  vertical-align: text-bottom;
+  position: relative;
+  top: 1px;
+}
+
+.message.status-tool .message-content {
+  background: rgba(251, 191, 36, 0.12);
+  border-color: rgba(251, 191, 36, 0.35);
+  color: rgba(254, 243, 199, 0.9);
 }
 
 .message.assistant-message.error .message-content {
@@ -454,15 +520,44 @@
   box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
 }
 
+.send-button.playing {
+  animation: pulseGlow 1.4s ease-in-out infinite;
+  cursor: not-allowed;
+}
+
 .send-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
   transform: none;
 }
 
+@keyframes pulseGlow {
+  0%, 100% {
+    box-shadow: 0 0 0 rgba(59, 130, 246, 0);
+  }
+  50% {
+    box-shadow: 0 0 18px rgba(59, 130, 246, 0.35);
+  }
+}
+
 .send-button svg {
   width: 16px;
   height: 16px;
+}
+
+.send-button-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .chat-loading-state {
@@ -473,102 +568,103 @@
   color: rgba(255, 255, 255, 0.6);
 }
 
-/* Mini coder animation: floating tab + panel */
-.coder-tab {
-  position: absolute;
-  left: 16px;
-  bottom: 110px; /* above input area */
-  z-index: 12;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 10px;
-  background: rgba(59, 130, 246, 0.15);
-  border: 1px solid rgba(59, 130, 246, 0.35);
-  color: rgba(255, 255, 255, 0.9);
-  border-radius: 999px;
-  font-size: 0.8rem;
-  cursor: pointer;
-  backdrop-filter: blur(6px);
+/* Document Mention Dropdown - Glass Morphism */
+.mention-dropdown-above {
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(30px) saturate(200%);
+  -webkit-backdrop-filter: blur(30px) saturate(200%);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 16px;
+  width: 100%;
+  max-height: 280px;
+  overflow-y: auto;
+  box-shadow: 0 8px 32px rgba(31, 38, 135, 0.2);
+  animation: mentionFadeInUp 0.15s ease-out;
+  margin-bottom: 0.75rem;
 }
 
-.coder-tab:hover {
-  background: rgba(59, 130, 246, 0.25);
+.mention-dropdown::-webkit-scrollbar {
+  width: 6px;
 }
 
-.coder-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #60A5FA;
-  box-shadow: 0 0 8px rgba(96,165,250,0.8);
-  animation: pulseDot 1.4s infinite ease-in-out;
+.mention-dropdown::-webkit-scrollbar-track {
+  background: transparent;
 }
 
-@keyframes pulseDot {
-  0%, 100% { transform: scale(1); opacity: 1; }
-  50% { transform: scale(1.2); opacity: 0.6; }
+.mention-dropdown::-webkit-scrollbar-thumb {
+  background: rgba(99, 102, 241, 0.4);
+  border-radius: 3px;
 }
 
-.coder-panel {
-  position: absolute;
-  left: 16px;
-  bottom: 160px;
-  width: 280px;
-  background: rgba(17, 24, 39, 0.98);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 12px;
-  z-index: 13;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-  overflow: hidden;
+.mention-dropdown::-webkit-scrollbar-thumb:hover {
+  background: rgba(99, 102, 241, 0.6);
 }
 
-.coder-header {
+.mention-item {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 8px 10px;
-  background: rgba(255, 255, 255, 0.04);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.coder-title { font-size: 0.8rem; color: rgba(255,255,255,0.9); }
-.coder-close {
-  background: transparent;
-  border: none;
-  color: rgba(255,255,255,0.7);
-  font-size: 16px;
+  gap: 0.75rem;
+  padding: 0.875rem 1rem;
   cursor: pointer;
-}
-.coder-close:hover { color: rgba(255,255,255,1); }
-
-.coder-body {
-  padding: 10px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  transition: all 0.15s ease;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.8);
 }
 
-.coder-line {
-  color: rgba(255,255,255,0.85);
-  font-size: 12px;
-  margin-bottom: 6px;
-  opacity: 0;
-  animation: fadeInLine 1.4s forwards;
+.mention-item:first-child {
+  border-top-left-radius: 16px;
+  border-top-right-radius: 16px;
 }
 
-.coder-line:last-child { margin-bottom: 0; }
-
-@keyframes fadeInLine {
-  0% { opacity: 0; transform: translateY(4px); }
-  100% { opacity: 1; transform: translateY(0); }
+.mention-item:last-child {
+  border-bottom: none;
+  border-bottom-left-radius: 16px;
+  border-bottom-right-radius: 16px;
 }
 
-.coder-caret {
-  display: inline-block;
-  width: 6px;
-  height: 0.9em;
-  background: rgba(255,255,255,0.9);
-  margin-left: 4px;
-  animation: blink 1s step-end infinite;
+.mention-item:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.95);
+  padding-left: 1.25rem;
+}
+
+.mention-item svg {
+  color: rgba(255, 255, 255, 0.6);
+  flex-shrink: 0;
+}
+
+.mention-item:hover svg {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.mention-item span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.95rem;
+  font-weight: 500;
+}
+
+@keyframes mentionFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes mentionFadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @keyframes blink { 50% { opacity: 0; } }

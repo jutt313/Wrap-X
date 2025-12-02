@@ -14,6 +14,7 @@ class UploadedDocument(Base):
     mime_type = Column(String, nullable=True)
     file_size = Column(BigInteger, nullable=False)  # Size in bytes
     content = Column(Text, nullable=False)  # Base64 encoded content
+    extracted_text = Column(Text, nullable=True)  # Full extracted text content
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships

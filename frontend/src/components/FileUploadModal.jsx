@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import '../styles/ToolsConfigModal.css';
 
 function FileUploadModal({ isOpen, onClose, onUpload }) {
@@ -7,6 +7,26 @@ function FileUploadModal({ isOpen, onClose, onUpload }) {
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
   const fileInputRef = useRef(null);
+
+  // Validate props on mount and when they change
+  useEffect(() => {
+    if (isOpen) {
+      console.log('FileUploadModal: Modal opened', { 
+        hasOnUpload: typeof onUpload === 'function',
+        hasOnClose: typeof onClose === 'function',
+        onUploadType: typeof onUpload,
+        onCloseType: typeof onClose
+      });
+      
+      if (typeof onUpload !== 'function') {
+        console.error('FileUploadModal: onUpload is not a function!', {
+          onUpload,
+          onUploadType: typeof onUpload,
+          props: { isOpen, onClose, onUpload }
+        });
+      }
+    }
+  }, [isOpen, onUpload, onClose]);
 
   const handleFileSelect = (e) => {
     const selectedFile = e.target.files?.[0];
@@ -24,8 +44,29 @@ function FileUploadModal({ isOpen, onClose, onUpload }) {
   };
 
   const handleUpload = async () => {
+    console.log('FileUploadModal: handleUpload called', { 
+      hasFile: !!file, 
+      fileName: file?.name,
+      hasOnUpload: typeof onUpload === 'function',
+      onUpload
+    });
+
     if (!file) {
-      setError('Please select a file first');
+      const errorMsg = 'Please select a file first';
+      console.warn('FileUploadModal:', errorMsg);
+      setError(errorMsg);
+      return;
+    }
+
+    // Validate onUpload prop
+    if (typeof onUpload !== 'function') {
+      const errorMsg = 'Upload handler is not available. Please refresh the page.';
+      console.error('FileUploadModal: onUpload is not a function!', {
+        onUpload,
+        onUploadType: typeof onUpload,
+        props: { isOpen, onClose, onUpload }
+      });
+      setError(errorMsg);
       return;
     }
 
@@ -34,18 +75,39 @@ function FileUploadModal({ isOpen, onClose, onUpload }) {
     setSuccess(null);
 
     try {
+      console.log('FileUploadModal: Reading file content', { 
+        fileName: file.name, 
+        fileType: file.type, 
+        fileSize: file.size 
+      });
+      
       // Read file content based on file type
       const fileData = await readFileContent(file);
+      console.log('FileUploadModal: File content read successfully', { 
+        fileType: fileData.fileType,
+        contentLength: fileData.content?.length,
+        mimeType: fileData.mimeType
+      });
       
-      // Call the upload handler with file data
-      await onUpload({
+      const uploadData = {
         filename: file.name,
         content: fileData.content,
         type: file.type,
         size: file.size,
         fileType: fileData.fileType
+      };
+      
+      console.log('FileUploadModal: Calling onUpload handler', {
+        filename: uploadData.filename,
+        fileType: uploadData.fileType,
+        size: uploadData.size,
+        contentPreview: uploadData.content?.substring(0, 50) + '...'
       });
+      
+      // Call the upload handler with file data
+      await onUpload(uploadData);
 
+      console.log('FileUploadModal: Upload successful');
       setSuccess(`File "${file.name}" uploaded successfully!`);
       setUploading(false);
       
@@ -59,6 +121,13 @@ function FileUploadModal({ isOpen, onClose, onUpload }) {
         onClose();
       }, 1500);
     } catch (err) {
+      console.error('FileUploadModal: Upload error occurred', {
+        error: err,
+        message: err.message,
+        stack: err.stack,
+        response: err.response,
+        fileName: file?.name
+      });
       setError(err.message || 'Failed to upload file');
       setUploading(false);
     }
@@ -66,11 +135,19 @@ function FileUploadModal({ isOpen, onClose, onUpload }) {
 
   const readFileContent = (file) => {
     return new Promise((resolve, reject) => {
+      console.log('FileUploadModal: readFileContent called', { 
+        fileName: file.name, 
+        fileType: file.type,
+        fileSize: file.size
+      });
+
       // Handle PDF files - read as ArrayBuffer and convert to base64
       if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+        console.log('FileUploadModal: Processing PDF file');
         const pdfReader = new FileReader();
         pdfReader.onload = (e) => {
           try {
+            console.log('FileUploadModal: PDF file read, converting to base64');
             const arrayBuffer = e.target.result;
             // Convert ArrayBuffer to base64
             const bytes = new Uint8Array(arrayBuffer);
@@ -79,18 +156,29 @@ function FileUploadModal({ isOpen, onClose, onUpload }) {
               binary += String.fromCharCode(bytes[i]);
             }
             const base64 = btoa(binary);
+            console.log('FileUploadModal: PDF converted to base64', { 
+              base64Length: base64.length 
+            });
             resolve({ 
               content: base64, 
               fileType: 'pdf',
               mimeType: 'application/pdf'
             });
           } catch (err) {
-            console.error('PDF processing error:', err);
+            console.error('FileUploadModal: PDF processing error:', err, {
+              error: err,
+              message: err.message,
+              stack: err.stack
+            });
             reject(new Error('Failed to process PDF file: ' + err.message));
           }
         };
         pdfReader.onerror = (e) => {
-          console.error('PDF read error:', e);
+          console.error('FileUploadModal: PDF read error:', e, {
+            error: e,
+            target: e.target,
+            errorCode: e.target?.error?.code
+          });
           reject(new Error('Failed to read PDF file'));
         };
         pdfReader.readAsArrayBuffer(file);
@@ -100,37 +188,71 @@ function FileUploadModal({ isOpen, onClose, onUpload }) {
       // Handle text files (CSV, TXT) - read as text
       if (file.type === 'text/csv' || file.name.toLowerCase().endsWith('.csv') ||
           file.type === 'text/plain' || file.name.toLowerCase().endsWith('.txt')) {
+        console.log('FileUploadModal: Processing text file (CSV/TXT)');
         const textReader = new FileReader();
         textReader.onload = (e) => {
           try {
             const content = e.target.result;
             const fileType = getFileType(file);
+            console.log('FileUploadModal: Text file read successfully', { 
+              fileType,
+              contentLength: content.length 
+            });
             resolve({ content, fileType, mimeType: file.type });
           } catch (err) {
+            console.error('FileUploadModal: Text file processing error:', err, {
+              error: err,
+              message: err.message,
+              stack: err.stack
+            });
             reject(new Error('Failed to read text file: ' + err.message));
           }
         };
-        textReader.onerror = () => reject(new Error('Failed to read text file'));
+        textReader.onerror = (e) => {
+          console.error('FileUploadModal: Text file read error:', e, {
+            error: e,
+            target: e.target,
+            errorCode: e.target?.error?.code
+          });
+          reject(new Error('Failed to read text file'));
+        };
         textReader.readAsText(file, 'UTF-8');
         return;
       }
 
       // For all other file types, read as base64 Data URL
+      console.log('FileUploadModal: Processing other file type as base64');
       const base64Reader = new FileReader();
       base64Reader.onload = (e) => {
         try {
           const dataUrl = e.target.result;
           const base64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
+          console.log('FileUploadModal: File converted to base64', { 
+            base64Length: base64.length,
+            fileType: getFileType(file)
+          });
           resolve({ 
             content: base64, 
             fileType: getFileType(file),
             mimeType: file.type || 'application/octet-stream'
           });
         } catch (err) {
+          console.error('FileUploadModal: Base64 conversion error:', err, {
+            error: err,
+            message: err.message,
+            stack: err.stack
+          });
           reject(new Error('Failed to process file: ' + err.message));
         }
       };
-      base64Reader.onerror = () => reject(new Error('Failed to read file'));
+      base64Reader.onerror = (e) => {
+        console.error('FileUploadModal: Base64 read error:', e, {
+          error: e,
+          target: e.target,
+          errorCode: e.target?.error?.code
+        });
+        reject(new Error('Failed to read file'));
+      };
       base64Reader.readAsDataURL(file);
     });
   };

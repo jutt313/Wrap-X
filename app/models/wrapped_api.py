@@ -29,6 +29,8 @@ class WrappedAPI(Base):
     # Enum + triggers for web search
     web_search = Column(String, nullable=True)  # "always", "conditional", "off"
     web_search_triggers = Column(Text, nullable=True)
+    # Custom tools integration
+    custom_tools_enabled = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -47,3 +49,6 @@ class WrappedAPI(Base):
     feedbacks = relationship("Feedback", back_populates="wrapped_api", cascade="all, delete-orphan")
     config_versions = relationship("ConfigVersion", back_populates="wrapped_api", cascade="all, delete-orphan")
     uploaded_documents = relationship("UploadedDocument", back_populates="wrapped_api", cascade="all, delete-orphan")
+    wrap_tools = relationship("WrapTool", back_populates="wrapped_api", cascade="all, delete-orphan")
+    wrap_credentials = relationship("WrapCredential", back_populates="wrapped_api", cascade="all, delete-orphan")
+    oauth_apps = relationship("OAuthApp", back_populates="wrapped_api", cascade="all, delete-orphan")

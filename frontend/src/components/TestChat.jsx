@@ -15,6 +15,7 @@ function TestChat({ wrappedApiId, endpointId, wrappedAPI }) {
     showWebSearch: true,
     autoScroll: true
   });
+  const [liveStatuses, setLiveStatuses] = useState({ thinking: false, webSearch: false });
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
 
@@ -118,7 +119,7 @@ function TestChat({ wrappedApiId, endpointId, wrappedAPI }) {
   };
 
   // Simulate streaming of assistant text into a message id
-  const simulateStream = (id, fullText) => {
+  const simulateStream = (id, fullText, onComplete) => {
     const speedMs = 18; // typing speed per tick
     const chunkSize = 3; // characters per tick
     let index = 0;
@@ -129,6 +130,9 @@ function TestChat({ wrappedApiId, endpointId, wrappedAPI }) {
       if (index >= fullText.length) {
         clearInterval(interval);
         setMessages(prev => prev.map(m => (m.id === id ? { ...m, isStreaming: false } : m)));
+        if (onComplete) {
+          onComplete();
+        }
       }
     }, speedMs);
   };
@@ -139,6 +143,7 @@ function TestChat({ wrappedApiId, endpointId, wrappedAPI }) {
     const userMessage = inputValue.trim();
     setInputValue('');
     setLoading(true);
+    setLiveStatuses({ thinking: false, webSearch: false });
 
     // Add user message immediately
     const newUserMessage = {
@@ -199,6 +204,7 @@ function TestChat({ wrappedApiId, endpointId, wrappedAPI }) {
       const events = Array.isArray(response.events) ? response.events : 
                      Array.isArray(response.wx_events) ? response.wx_events : [];
       const eventMsgs = [];
+      const indicatorState = { thinking: false, webSearch: false };
       
       for (const ev of events) {
         if (!testChatConfig.showThinking) {
@@ -220,13 +226,15 @@ function TestChat({ wrappedApiId, endpointId, wrappedAPI }) {
 
         if (ev.type === 'thinking_started') {
           const focus = ev.focus ? `: ${ev.focus}` : '';
+          indicatorState.thinking = true;
           eventMsgs.push({
             id: Date.now() + eventMsgs.length,
             role: 'assistant',
-            content: `Thinking${focus}`,
+            content: `Thinking${focus} /////`,
             timestamp: new Date().toISOString(),
             isStatus: true,
-            statusType: 'thinking'
+            statusType: 'thinking',
+            autoHide: true
           });
         }
         else if (ev.type === 'thinking_content') {
@@ -238,7 +246,8 @@ function TestChat({ wrappedApiId, endpointId, wrappedAPI }) {
               content: `Thinking: ${content}`,
               timestamp: new Date().toISOString(),
               isStatus: true,
-              statusType: 'thinking'
+              statusType: 'thinking',
+              autoHide: true
             });
           }
         }
@@ -248,15 +257,21 @@ function TestChat({ wrappedApiId, endpointId, wrappedAPI }) {
           
           if (toolName === 'web_search') {
             const query = args.query || '';
+            console.log('🔍 [TestChat] WEB SEARCH STARTED');
+            console.log('  Query:', query);
+            console.log('  Full event:', ev);
+            indicatorState.webSearch = true;
             eventMsgs.push({
               id: Date.now() + eventMsgs.length,
               role: 'assistant',
-              content: query ? `Searching the web: "${query}"` : 'Searching the web',
+              content: query ? `Searching the web: "${query}" /////` : 'Searching the web /////',
               timestamp: new Date().toISOString(),
               isStatus: true,
-              statusType: 'web_search'
+              statusType: 'web_search',
+              autoHide: true
             });
           } else {
+            console.log(`🔧 [TestChat] Tool call: ${toolName}`, ev);
             eventMsgs.push({
               id: Date.now() + eventMsgs.length,
               role: 'assistant',
@@ -273,18 +288,25 @@ function TestChat({ wrappedApiId, endpointId, wrappedAPI }) {
           if (toolName === 'web_search') {
             const query = ev.query || '';
             const resultsCount = ev.results_count || 0;
+            console.log('✅ [TestChat] WEB SEARCH COMPLETED');
+            console.log('  Query:', query);
+            console.log('  Results count:', resultsCount);
+            console.log('  Full event:', ev);
             const statusText = query 
               ? `Web search complete: "${query}" (${resultsCount} results)`
               : `Web search complete (${resultsCount} results)`;
+            indicatorState.webSearch = false;
             eventMsgs.push({
               id: Date.now() + eventMsgs.length,
               role: 'assistant',
               content: statusText,
               timestamp: new Date().toISOString(),
               isStatus: true,
-              statusType: 'web_search'
+              statusType: 'web_search',
+              autoHide: true
             });
           } else {
+            console.log(`✅ [TestChat] Tool result: ${toolName}`, ev);
             eventMsgs.push({
               id: Date.now() + eventMsgs.length,
               role: 'assistant',
@@ -296,16 +318,19 @@ function TestChat({ wrappedApiId, endpointId, wrappedAPI }) {
           }
         }
         else if (ev.type === 'thinking_completed') {
+          indicatorState.thinking = false;
           eventMsgs.push({
             id: Date.now() + eventMsgs.length,
             role: 'assistant',
             content: 'Thinking complete',
             timestamp: new Date().toISOString(),
             isStatus: true,
-            statusType: 'thinking'
+            statusType: 'thinking',
+            autoHide: true
           });
         }
       }
+      setLiveStatuses(indicatorState);
 
       // Extract final response content (handle both simple and OpenAI-compatible formats)
       const responseContent = response.choices?.[0]?.message?.content || 
@@ -327,12 +352,16 @@ function TestChat({ wrappedApiId, endpointId, wrappedAPI }) {
         return [...filtered, ...eventMsgs, streamingAssistant];
       });
       // Simulate streaming into the assistant message
-      simulateStream(streamId, responseContent);
+      simulateStream(streamId, responseContent, () => {
+        setMessages(prev => prev.filter(msg => !msg.autoHide));
+        setLiveStatuses({ thinking: false, webSearch: false });
+        setLoading(false);
+      });
     } catch (err) {
       console.error('Error sending message:', err);
       // Remove typing indicator and add error
       setMessages(prev => {
-        const filtered = prev.filter(msg => msg.id !== typingMessage.id);
+        const filtered = prev.filter(msg => msg.id !== typingMessage.id && !msg.autoHide);
         const errorMessage = {
           id: Date.now() + 1,
           role: 'assistant',
@@ -342,7 +371,7 @@ function TestChat({ wrappedApiId, endpointId, wrappedAPI }) {
         };
         return [...filtered, errorMessage];
       });
-    } finally {
+      setLiveStatuses({ thinking: false, webSearch: false });
       setLoading(false);
     }
   };
@@ -399,6 +428,8 @@ function TestChat({ wrappedApiId, endpointId, wrappedAPI }) {
     );
   }
 
+  const isProcessing = loading || liveStatuses.thinking || liveStatuses.webSearch;
+
   return (
     <div className="test-chat-card">
       <div className="test-chat-messages-container">
@@ -452,13 +483,17 @@ function TestChat({ wrappedApiId, endpointId, wrappedAPI }) {
             rows={1}
           />
           <button 
-            className="test-send-button"
+            className={`test-send-button ${isProcessing ? 'playing' : ''}`}
             onClick={handleSend}
-            disabled={loading || !inputValue.trim() || !endpointId || !isConfigured}
+            disabled={isProcessing || !inputValue.trim() || !endpointId || !isConfigured}
           >
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M2.5 10L17.5 10M17.5 10L11.6667 3.33334M17.5 10L11.6667 16.6667" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
+            {isProcessing ? (
+              <span className="send-button-spinner" />
+            ) : (
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M2.5 10L17.5 10M17.5 10L11.6667 3.33334M17.5 10L11.6667 16.6667" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            )}
           </button>
         </div>
       </div>

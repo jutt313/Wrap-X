@@ -42,6 +42,7 @@ ALLOWED_FIELDS = {
     "config_status",
     "response_message",  # AI-generated response, not a config field but allowed
     "error",  # AI-generated error, not a config field but allowed
+    "pending_tools",  # pending integration forms to render in UI
 }
 
 # Enum validations
@@ -279,6 +280,17 @@ def validate_config_updates(
             else:
                 cleaned[field] = value
         
+        elif field == "pending_tools":
+            if isinstance(value, list):
+                cleaned[field] = value
+            else:
+                errors.append({
+                    "field": field,
+                    "value": value,
+                    "message": "pending_tools must be a list",
+                    "valid_type": "list"
+                })
+        
         # Validate string fields (role, instructions, rules, behavior, examples, thinking_focus, web_search_triggers, and extended fields)
         elif field in {"role", "instructions", "rules", "behavior", "examples", "thinking_focus", "web_search_triggers",
                        "purpose", "where", "who", "structure", "length", "docs_data", "constraints", "errors", "access_versioning", "config_status"}:
@@ -301,12 +313,12 @@ def validate_config_updates(
                     normalized_examples = _normalize_examples_text(value)
                     lines = [line.strip() for line in normalized_examples.split("\n") if line.strip()]
                     numbered_count = sum(1 for line in lines if re.match(r"^\d+\.", line))
-                    if numbered_count < 5:
+                    if numbered_count < 2:
                         errors.append({
                             "field": field,
                             "value": (normalized_examples[:100] + "...") if len(normalized_examples) > 100 else normalized_examples,
-                            "message": "Examples should contain at least 5 numbered entries formatted like '1. Q: ... A: ...'",
-                            "suggestion": "Provide at least five Q/A pairs and ensure each begins with a number (e.g., '1. Q: ... A: ...')."
+                            "message": "Examples should contain at least 2 numbered entries formatted like '1. Q: ... A: ...'",
+                            "suggestion": "Provide at least two Q/A pairs and ensure each begins with a number (e.g., '1. Q: ... A: ...')."
                         })
                     else:
                         cleaned[field] = normalized_examples

@@ -5,7 +5,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi import status
 from app.database import async_engine, Base
 from app.routers import auth, dashboard, notifications, projects, billing
-from app.routers import llm_providers, wrapped_apis, wrap_x
+from app.routers import llm_providers, wrapped_apis, wrap_x, oauth
 from app.config import settings
 import app.models  # Import all models
 import logging
@@ -24,14 +24,13 @@ async def startup_event():
     # Check ENCRYPTION_KEY in production
     is_production = os.getenv("ENVIRONMENT", "").lower() in ("production", "prod") or os.getenv("PRODUCTION", "").lower() == "true"
     
-    if is_production and not settings.encryption_key:
-        logger.error("CRITICAL: ENCRYPTION_KEY is not set in production environment!")
-        logger.error("This will cause data loss. Set ENCRYPTION_KEY in your .env file.")
-        raise ValueError("ENCRYPTION_KEY must be set in production")
-    
     if not settings.encryption_key:
-        logger.warning("ENCRYPTION_KEY not set - using generated key (NOT SECURE for production!)")
-        logger.warning("Set ENCRYPTION_KEY in .env file for production use")
+        logger.error("CRITICAL: ENCRYPTION_KEY is not set.")
+        logger.error(
+            "Set ENCRYPTION_KEY in your .env file before starting the server. "
+            "The key must stay constant across restarts or encrypted credentials will break."
+        )
+        raise ValueError("ENCRYPTION_KEY must be set in .env before running Wrap-X")
     
     logger.info("Wrap-X API started successfully")
 
@@ -73,7 +72,6 @@ app.add_middleware(
         "https://www.wrap-x.com",
         "https://wrap-x-479223.web.app",  # Firebase Hosting
         "https://wrap-x-479223.firebaseapp.com",  # Firebase Hosting (alternate URL)
-        "https://wrap-x-198767072474.us-central1.run.app",  # Cloud Run direct domain
         "http://localhost:3000",  # Keep for local dev
         "http://localhost:5173",  # Keep for local dev
         "http://127.0.0.1:3000",  # Keep for local dev
@@ -93,6 +91,7 @@ app.include_router(llm_providers.router)
 app.include_router(wrapped_apis.router)
 app.include_router(wrap_x.router)  # Simplified /api/wrap-x/chat endpoint
 app.include_router(billing.router)
+app.include_router(oauth.router)
 
 
 @app.get("/")

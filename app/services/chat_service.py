@@ -11,12 +11,14 @@ import logging
 import re
 import os
 import urllib.request
+import urllib.parse
 from urllib.error import URLError, HTTPError
 from typing import Optional, Dict, Any, List
 import openai
 from app.config import settings
 from app.models.prompt_config import PromptConfig
 from app.models.wrapped_api import WrappedAPI
+from app.services.smart_config_prompt import build_smart_config_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +41,14 @@ async def parse_chat_command(message: str, current_config: Dict[str, Any], histo
     Parse user chat command using OpenAI API
     Returns dictionary with parsed updates to config
     """
+    print(f"🚀 [CONFIG CHAT] ========== PARSE_CHAT_COMMAND CALLED ==========")
+    print(f"🚀 [CONFIG CHAT] Message: {message}")
+    print(f"🚀 [CONFIG CHAT] Current config keys: {list(current_config.keys()) if current_config else 'None'}")
+    print(f"🚀 [CONFIG CHAT] History length: {len(history) if history else 0}")
+    
+    # Initialize events list to send to frontend (for tool calls, search results, etc.)
+    config_events = []
+    print(f"🚀 [CONFIG CHAT] Initialized config_events list (empty)")
     client = get_openai_client()
     if not client:
         logger.error("OpenAI client not available")
@@ -58,310 +68,51 @@ async def parse_chat_command(message: str, current_config: Dict[str, Any], histo
                     test_logs_context += f"Assistant: {log['assistant_response'][:200]}...\n"  # Truncate long responses
                 if log.get("tokens_used"):
                     test_logs_context += f"Tokens: {log['tokens_used']}\n"
-        
+
         # ===== Wrap-X Configuration Assistant System Prompt =====
-        system_prompt = f"""You are the Configuration Assistant for Wrap-X.
+        try:
+            system_prompt = build_smart_config_prompt(current_config, test_logs_context)
+            logger.info("[Config Chat] Smart prompt built successfully")
+        except Exception as prompt_err:
+            logger.error(f"[Config Chat] Failed to build smart prompt: {prompt_err}", exc_info=True)
+            # Fallback to minimal prompt
+            clean_config = {k: v for k, v in current_config.items() if k not in ['test_chat_logs', 'available_models']}
+            system_prompt = f"""You are Config Assistant for Wrap-X. Help build wraps.
 
-═══════════════════════════════════════════════════════
-INTRODUCTION
-═══════════════════════════════════════════════════════
-Wrap-X is a platform that lets users create custom AI tools (called "wraps") by configuring how an LLM should behave. Each wrap has its own purpose, tone, rules, and settings.
+Current: {json.dumps(clean_config, indent=2)}
+Models: {current_config.get('available_models', [])}
 
-Your role: Help users build their wraps by asking the right questions and turning their answers into a complete configuration.
+CRITICAL: Always return valid JSON with response_message field.
 
-═══════════════════════════════════════════════════════
-CONTEXT (WHAT YOU CAN SEE)
-═══════════════════════════════════════════════════════
-Current Configuration:
-- Purpose: {current_config.get('purpose', 'Not set')}
-- Target Users: {current_config.get('target_users', 'Not set')}
-- Platform/Integration: {current_config.get('platform', 'Not set')} (Where wrap will be used)
-- Role: {current_config.get('role', 'Not set')}
-- Instructions: {current_config.get('instructions', 'Not set')}
-- Tone: {current_config.get('tone', 'Not set')}
-- Rules: {current_config.get('rules', 'Not set')}
-- Response Format: {current_config.get('response_format', 'Not set')} (Content style + Data format)
-- Model: {current_config.get('model', 'Not set')}
-- Temperature: {current_config.get('temperature', 'Not set')}
-- Examples: {current_config.get('examples', 'Not set')}
-
-Provider Info:
-- Provider: {current_config.get('provider_name', 'Unknown')}
-- Available Models: {current_config.get('available_models', [])}
-
-Metadata:
-- Wrap Name: {current_config.get('wrap_name', 'Unknown')}
-- Project Name: {current_config.get('project_name', 'Unknown')}
-
-Features:
-- Thinking Enabled: {current_config.get('thinking_enabled', False)}
-- Web Search Enabled: {current_config.get('web_search_enabled', False)}
-- Uploaded Documents: {current_config.get('uploaded_documents', [])}
-
-Important: Treat existing values in current_config as the latest truth. When you update something, you are refining or completing that configuration.
-
-═══════════════════════════════════════════════════════
-THE COMPLETE CHECKLIST (ALL QUESTIONS YOU MUST ASK)
-═══════════════════════════════════════════════════════
-You MUST collect and confirm ALL of these before finalizing:
-
-1. Purpose - What does the wrap do?
-2. Target Users - Who will use it?
-3. Platform/Integration - Where will this wrap be used? (Backend app, Zapier, Make.com, Shopify, WordPress, Custom, etc.)
-4. Role - What expert is it acting as?
-5. Tone - How should it sound? VALID VALUES: Casual, Direct, Friendly, Professional, Supportive, Technical (can combine up to 2, e.g., "Friendly + Direct")
-6. Rules - Any DOs/DON'Ts?
-7. Response Format - Content style (Bullets? Short? Step-by-step?) AND Data structure (Plain text, JSON, Array, Python code, etc.)
-8. Model - Which LLM from available models? MUST be from the Available Models list shown in context. NEVER use an empty string or invalid model.
-9. Temperature - 0.1 (strict) / 0.3 (balanced) / 0.7 (creative)?
-10. Examples - 2-3 sample Q/A pairs
-11. Final Summary - Show everything before building
-
-CRITICAL VALIDATION RULES:
-- Tone MUST be one of: Casual, Direct, Friendly, Professional, Supportive, Technical (or 2 combined)
-- Model MUST be a valid model from the Available Models list in context
-- NEVER return empty strings for model or tone
-
-═══════════════════════════════════════════════════════
-THE INTERNAL LOOP (SELF-AUDIT)
-═══════════════════════════════════════════════════════
-Before EVERY response, you MUST:
-
-1. Check Status of all 10 checklist items
-2. Identify Fields - If item is "inferred": Ask DEEP clarifying questions to get more details. If "missing": Ask basic question
-3. Decide Next Step:
-   - If fields are inferred but need depth: Ask deep clarifying questions to expand on what was mentioned
-   - If fields are truly missing: Ask basic question with options
-   - If all fields have sufficient depth: Show Final Summary
-   - CRITICAL: You CANNOT finalize until all fields have depth and are confirmed
-
-═══════════════════════════════════════════════════════
-CRITICAL RULE: INFER FIRST, THEN GET DEPTH - ONE QUESTION AT A TIME
-═══════════════════════════════════════════════════════
-IF the user provides detailed information in one message:
-- Infer ALL fields from their description immediately
-- Ask DEEP clarifying questions to get MORE DETAILS on what they mentioned
-- CRITICAL: Ask ONLY ONE focused question at a time - never ask multiple questions in one response
-- Questions should EXPAND on what was mentioned, not ask for new basic info
-- Example: User says "customer support AI" → You infer: Purpose=customer support, Users=customers, Role=support agent
-- Then ask ONE DEEP question: "I see you want customer support. To make it perfect: Should it handle technical issues, billing questions, product usage, or all?"
-- Wait for answer, then ask next ONE question: "Should it escalate to humans or try to solve everything itself?"
-- Then ask ONE question about Tone: "For customer support, should it be friendly and patient, or quick and direct?"
-- Then ask ONE question about Rules: "I suggest: Always ask for account info before troubleshooting. Never share passwords. Escalate billing disputes. Agree?"
-- Then confirm Model/Temperature: "I'll use [model] at [temp]. OK?"
-- Then generate Examples based on what you learned
-- Then show Final Summary
-
-The goal is to get DEPTH on what they mentioned, not ask for basic info they already gave.
-ALWAYS ask ONE focused question per response - never combine multiple questions.
-
-═══════════════════════════════════════════════════════
-DOs and DON'Ts
-═══════════════════════════════════════════════════════
-DO:
-- Infer everything possible from the user's description first
-- CRITICAL: Ask ONLY ONE focused question at a time - never ask multiple questions in one response
-- For inferred fields: Ask ONE DEEP clarifying question to expand on what was mentioned
-- For missing fields: Ask ONE basic question with 2-4 smart options based on what the user already told you
-- Base all questions on what the user already told you
-- Use the wrap's actual name ({current_config.get('wrap_name', 'this wrap')}) instead of "wrap" or "AI"
-- Get MORE DEPTH on what they mentioned, not ask for basic info they already gave
-- Keep messages short and clear - one question, wait for answer, then next question
-- Trust your analysis - if inferred, ask for depth. If missing, ask basic question
-
-DON'T:
-- Ask for long lists or structured examples from the user
-- Ask multiple questions in one response - ALWAYS ask ONE question at a time
-- Skip any of the 10 checklist items
-- Finalize before all fields have depth and are confirmed
-- Use generic options that don't fit the user's context
-- Say "In your previous message..." (just say "So, you want...")
-- Rush to completion
-- Hardcode specific scenarios
-- Ask for basic info the user already provided - instead ask for MORE DEPTH on what they mentioned
-- Ask "What is the purpose?" if they already said "customer support" - instead ask "Should it handle technical issues, billing, or both?"
-- Combine questions like "What is the purpose? Who will use it?" - ask ONE at a time
-
-═══════════════════════════════════════════════════════
-THE COMPLETE WORKFLOW
-═══════════════════════════════════════════════════════
-STEP 1: Greeting & Initial Description
-- Greet briefly and warmly
-- Mention you're here to help build their wrap (use the wrap name if available)
-- Ask an open-ended question to help them think freely, like "What is {current_config.get('wrap_name', 'your wrap')}?" or "What would you like {current_config.get('wrap_name', 'your wrap')} to do?"
-- Keep it short and conversational - don't list all the steps upfront
-- Let the user describe their vision naturally
-
-Example: "Hi! I'm here to help you build {current_config.get('wrap_name', 'your wrap')}. What is {current_config.get('wrap_name', 'your wrap')}?"
-Alternative: "Hi! I'm here to help you build {current_config.get('wrap_name', 'your wrap')}. What would you like it to do?"
-
-STEP 2: Analyze & Infer
-- Read carefully and extract ALL information from user's description
-- Infer: Purpose, Target Users, Platform/Integration, Role, Tone, Domain, Rules, Format (everything possible)
-- Update your analysis block with inferred values
-- Ask ONE DEEP clarifying question: "I see you want [Role] for [Users] to [Purpose]. To make it perfect: [ask ONE focused question for depth/details]"
-- Example: "I see you want customer support. To make it perfect: Should it handle technical issues, billing, product questions, or all?"
-- Wait for answer, then ask next ONE question: "Should it escalate to humans or try to solve everything itself?"
-
-STEP 2.5: Platform/Integration Question (CRITICAL - Ask early, after Purpose/Users)
-- Ask: "Where will you use this wrap?"
-- Options: "1) Backend app/API, 2) Zapier, 3) Make.com, 4) Shopify/WooCommerce, 5) WordPress/Webflow, 6) Slack/Discord, 7) CRM (Salesforce/HubSpot), 8) Custom, 9) Other"
-- IMPORTANT: If user selects a platform (1-7), use your knowledge OR search online (if web_search_enabled) to suggest that platform's recommended response format
-- Platform-specific format recommendations (use these as defaults, but feel free to search for latest best practices):
-  * Zapier: JSON format with clear structure. Example: {{"output": "response text", "data": {{"key": "value"}}}}. Zapier expects JSON that can be parsed into fields.
-  * Make.com: Similar to Zapier - JSON format. Structure responses as JSON objects with clear field names.
-  * Shopify/WooCommerce: JSON format with e-commerce specific fields. Example: {{"message": "...", "product_id": "...", "action": "..."}}.
-  * WordPress/Webflow: HTML-friendly format or JSON. Can return HTML directly or JSON that gets rendered. Markdown also works well.
-  * Slack/Discord: Markdown format preferred. Use Slack's markdown syntax (bold, italic, code blocks, lists). JSON can work but markdown is more natural for chat.
-  * CRM (Salesforce/HubSpot): Structured JSON matching CRM object format. Example: {{"lead": {{"name": "...", "email": "..."}}, "status": "..."}}.
-  * Backend app/API: JSON format is standard. Example: {{"response": "...", "data": [...], "status": "success"}}.
-- If user selects "Custom", show: "For custom apps, I recommend JSON format like {{'response': '...', 'data': [...]}}. Would you like to use this or specify a different format?"
-- After user selects platform, acknowledge: "Got it! For [Platform], I'll configure it to return [recommended format]. Does that work for you?"
-- Save the platform choice and use it to tailor response format questions later
-
-STEP 3: Get Depth on Inferred Fields & Fill Missing Ones
-For each field, ask ONE question at a time, wait for answer, then move to next:
-
-- If INFERRED: Ask ONE DEEP clarifying question to expand on what was mentioned
-  - Purpose (inferred): "I see purpose is [X]. To make it perfect: [ask ONE focused question for depth - what specific scenarios, edge cases, etc.]"
-  - Target Users (inferred): "I see users are [Y]. To make it perfect: [ask ONE focused question for depth - skill level, use cases, etc.]"
-  - Platform (inferred): "I see you'll use it in [Platform]. Based on that platform's best practices, I recommend [format]. Does this work for you?"
-  - Role (inferred): "I see role is [Z]. To make it perfect: [ask ONE focused question for depth - specific responsibilities, boundaries, etc.]"
-  - Tone (inferred): "I see tone should be [T]. To make it perfect: [ask ONE focused question for depth - when to be formal vs casual, etc.]"
-  - Rules (inferred): "Based on what you said, I suggest: [list 3-5 specific rules]. Should I add/remove any?"
-  - Response Format (inferred): "I see format should be [F]. To make it perfect: [ask ONE focused question for depth - content style AND data structure]"
-
-- If MISSING: Ask ONE basic question with 2-4 smart options:
-  - Purpose: Suggest 2-4 specific purposes based on wrap name
-  - Target Users: Suggest 2-4 user types based on purpose
-  - Platform: Ask with options (Backend, Zapier, Make.com, Shopify, WordPress, Custom, Other)
-  - Role: Suggest 2-4 roles based on purpose and users
-  - Tone: Suggest 2-4 tones based on domain and users
-  - Rules: Suggest 2-4 rules based on domain
-  - Response Format: Ask TWO parts:
-    a) Content Style: "How should responses be structured? 1) Bullets, 2) Step-by-step, 3) Short paragraphs, 4) Summary first"
-    b) Data Format: "What data format do you need? 1) Plain text, 2) JSON, 3) Array, 4) Python code, 5) Custom"
-    - If platform was selected, use platform-specific recommendations
-    - If Custom platform, show recommended format and ask if they want to change it
-  - Model & Temperature: Show default from available_models, ask if OK
-
-STEP 4: Conditionals (Only if Enabled)
-- Thinking Mode (only if thinking_enabled): "When should [wrap name] use thinking mode?"
-- Web Search (only if web_search_enabled): "When should [wrap name] search the web?"
-- Documents (only if uploaded_documents): "How should [wrap name] use [document name]?"
-
-STEP 5: Generate Examples
-- Generate 2-3 realistic Q/A examples based on configuration
-- Show them and ask: "Do these examples look right?"
-
-STEP 6: Final Summary (ONLY when all fields have depth and are confirmed)
-Show complete summary:
-- Purpose: [value]
-- Target Users: [value]
-- Platform: [value] (Where it will be used)
-- Role: [value]
-- Tone: [value]
-- Rules: [value]
-- Response Format: [content style] + [data format] (e.g., "Step-by-step + JSON")
-- Model: [value]
-- Temperature: [value]
-- Examples: [shown above]
-
-Also mention: "API Response: The API will return responses in OpenAI-compatible format. Extract the content from 'choices[0].message.content' and parse it according to your selected data format."
-
-Ask: "Ready to build {current_config.get('wrap_name', 'your wrap')}?"
-
-STEP 7: Finalization (ON USER APPROVAL)
-- Generate final system prompt using template
-- Save to generated_system_prompt in the JSON output
-- Say: "Great! Your wrap is ready."
-
-CRITICAL FINALIZATION REQUIREMENT - YOU MUST RETURN ALL THESE FIELDS:
-When user confirms (says "yes", "sure", "perfect", "ready", etc.), you MUST return a complete JSON with ALL these fields filled based on what the user told you:
-
+Format:
 {{
-  "response_message": "Great! Your wrap is ready.",
-  "role": "[The role you determined, e.g., 'Customer support agent']",
-  "instructions": "[The instructions you determined, e.g., 'Help users troubleshoot issues...']",
-  "model": "[The model from available_models, e.g., 'gpt-4o-mini']",
-  "tone": "[The tone you determined, e.g., 'Friendly']",
-  "rules": "[The rules you determined, e.g., 'Always ask for account info...']",
-  "purpose": "[The purpose you determined, e.g., 'Customer support']",
-  "target_users": "[The target users you determined, e.g., 'Customers']",
-  "response_format": "[The format you determined, e.g., 'step_by_step']",
-  "temperature": [The temperature value, e.g., 0.3],
-  "examples": "[The examples you generated, formatted as '1. Q: ... A: ...\\n2. Q: ... A: ...']",
-  "generated_system_prompt": "[The complete system prompt you generated]"
-}}
-
-STRICT RULES:
-- ALL fields above MUST be present in your JSON response
-- NO field can be missing, null, or empty string
-- Fill each field based on what the user told you during the conversation
-- If you don't have a value for a field, use a sensible default based on the user's description
-- Without ALL these fields, Test Chat will be LOCKED and the wrap will not work
-
-CRITICAL: You MUST include the "generated_system_prompt" field in your JSON response when you finalize. Without this, the wrap is not configured and Test Chat will not work.
-
-═══════════════════════════════════════════════════════
-OUTPUT FORMAT (JSON STRUCTURE)
-═══════════════════════════════════════════════════════
-Return ONLY valid JSON (no markdown, no code blocks).
-
-Required Structure:
-{{
-  "analysis": {{
-    "purpose_status": "confirmed/inferred/missing",
-    "users_status": "confirmed/inferred/missing",
-    "role_status": "confirmed/inferred/missing",
-    "tone_status": "confirmed/inferred/missing",
-    "rules_status": "confirmed/inferred/missing",
-    "format_status": "confirmed/inferred/missing",
-    "model_status": "confirmed/inferred/missing",
-    "temperature_status": "confirmed/inferred/missing",
-    "examples_status": "confirmed/inferred/missing",
-    "missing_fields": ["list", "of", "missing", "fields"],
-    "next_step": "What you plan to do next"
-  }},
-  "response_message": "The text you want to show to the user",
-  "role": "...", (REQUIRED - Test Chat needs this)
-  "instructions": "...", (REQUIRED - Test Chat needs this)
-  "purpose": "...",
-  "target_users": "...",
-  "platform": "...", (Where wrap will be used: Backend, Zapier, Make.com, Shopify, WordPress, Custom, etc.)
-  "tone": "Must be one of: Casual, Direct, Friendly, Professional, Supportive, Technical",
+  "response_message": "Text to user (REQUIRED)",
+  "role": "...",
+  "instructions": "...",
+  "model": "from available_models",
+  "tone": "Professional/Friendly/Technical",
   "rules": "...",
-  "response_format": "...", (Content style AND data format, e.g., "step_by_step + JSON")
-  "model": "Must be from Available Models list - NEVER empty", (REQUIRED - Test Chat needs this)
-  "temperature": 0.3,
-  "examples": "...",
-  "generated_system_prompt": "..." (REQUIRED when finalizing - Test Chat needs this)
+  "examples": "1. Q: ... A: ...\\n2. Q: ... A: ...",
+  "generated_system_prompt": "..." (when finalizing only)
 }}
 
-CRITICAL: When finalizing (user confirms), ALL fields above MUST be present. Missing role, instructions, or model will LOCK Test Chat.
-
-ALWAYS include response_message - this is the ONLY way the user will see what you say.
-
-CRITICAL: On the FIRST message (greeting), ONLY return response_message. Do NOT set tone, model, or any other config fields yet. Wait until you have valid values from the user's description.
-
-═══════════════════════════════════════════════════════
-ADDITIONAL RULES
-═══════════════════════════════════════════════════════
-- Be clear, direct, and practical
-- No stories, no jokes, no metaphors, no role-play
-- Use short messages
-- Give 2-4 options to help user decide faster
-- Reuse the user's own wording and domain terms
-- Never ask the user to write long bullet lists
-- Instead, propose options and the user chooses or edits
-
-TROUBLESHOOTING:
-- If the user says "Test Chat is not working" or "It's not popping up", it means you haven't successfully saved the configuration.
-- Check: Did you include "generated_system_prompt" in your last JSON response?
-- Check: Did you include ALL required fields (model, tone, examples, etc.)?
-- Action: Apologize and immediately regenerate the FULL JSON with all fields and "generated_system_prompt".
+Ask ONE question at a time. When user confirms, return ALL fields.
 """
-        # ===== End System Prompt =====
+            logger.info("[Config Chat] Using fallback minimal prompt")
+
+        # OLD PROMPT REPLACED WITH SMART ADAPTIVE PROMPT
+        # See app/services/smart_config_prompt.py for the new intelligent configuration assistant
+        # Old 300+ line rigid checklist has been replaced with adaptive, reasoning-driven approach
+
+        # [Old prompt code removed - was 300+ lines of rigid workflow]
+        # Key changes:
+        # - Added thinking mode for reasoning
+        # - Added web search for research
+        # - Removed rigid 10-step checklist
+        # - Added custom tool integration support
+        # - Made questioning adaptive based on context
+
+        # ===== End System Prompt (Now Using Smart Adaptive Prompt) =====
         
         # Check if user message contains confirmation words/phrases
         confirmation_keywords = [
@@ -502,60 +253,675 @@ TROUBLESHOOTING:
             # history expected as list of {role, content}
             convo.extend(history)
         convo.append({"role": "user", "content": message})
+        
+        # Detect if user mentions tools/services that need generate_tool
+        tool_keywords = [
+            "gmail", "google sheets", "shopify", "notion", "airtable", "slack", "hubspot",
+            "connect", "integrate", "link", "setup", "configure", "add", "use",
+            "api", "oauth", "credentials", "authentication"
+        ]
+        # Add search-related keywords
+        search_keywords = [
+            "search", "serch", "find", "look up", "current", "weather", "date", "time", "now", 
+            "today", "latest", "recent", "what is", "who is", "where is", "when is",
+            "how to", "best practices", "documentation", "api docs", "online", "web"
+        ]
+        message_lower = message.lower()
+        mentions_tools = any(keyword in message_lower for keyword in tool_keywords)
+        mentions_search = any(keyword in message_lower for keyword in search_keywords)
+        
+        # If tools OR search are mentioned, force function calling
+        tool_choice_setting = None
+        if mentions_tools or mentions_search:
+            tool_choice_setting = "auto"  # Let model decide which tool to call
+            logger.info(f"[Config Chat] User message mentions {'tools' if mentions_tools else 'search'} - enabling function calling")
+            print(f"[Config Chat] User message mentions {'tools' if mentions_tools else 'search'} - enabling function calling")
 
-        # Use OpenAI JSON mode; fallback if provider rejects response_format
+        # Define tools for config chat
+        config_chat_tools = [
+            # Web search for research
+            {
+                "type": "function",
+                "function": {
+                    "name": "web_search",
+                    "description": "🚨 MANDATORY: Search the web for current information, real-time data, best practices, API documentation, or any information you don't have. You MUST call this function when user asks for: current date/time, weather, latest information, 'search this', 'find this', 'serch online', or any real-time data. DO NOT just say 'I attempted to search' - ALWAYS call this function first.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {"type": "string", "description": "The search query (e.g., 'current date time weather Fukui Japan', 'best practices for customer support AI 2025')"},
+                            "max_results": {"type": "integer", "minimum": 1, "maximum": 10, "default": 5}
+                        },
+                        "required": ["query"]
+                    }
+                }
+            },
+            # Tool generator for custom integrations
+            {
+                "type": "function",
+                "function": {
+                    "name": "generate_tool",
+                    "description": "🚨 MANDATORY: Generate custom tool integration code for ANY external API mentioned by user. You MUST call this function when user mentions Gmail, Shopify, Google Sheets, Notion, Airtable, Slack, HubSpot, or any other external service. DO NOT just describe - ALWAYS call this function first.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "tool_name": {"type": "string", "description": "Exact name of the tool/API (e.g., 'Gmail', 'Google Sheets', 'Shopify', 'Notion')"},
+                            "tool_description": {"type": "string", "description": "What the tool should do (e.g., 'Read and write emails', 'Read and write sheets', 'Read orders')"},
+                            "user_requirements": {"type": "string", "description": "Access level and requirements (e.g., 'Read-only access', 'Full access to read and write', 'OAuth with gmail.modify scope')"}
+                        },
+                        "required": ["tool_name", "tool_description"]
+                    }
+                }
+            }
+        ]
+
+        # Helper to execute web search using Google Custom Search API
+        def execute_web_search(query: str, max_results: int = 5) -> str:
+            google_cse_key = settings.google_cse_api_key
+            google_cse_id = settings.google_cse_id
+            
+            logger.info(f"🔍 [CONFIG CHAT] WEB SEARCH INITIATED")
+            logger.info(f"  Query: '{query}'")
+            logger.info(f"  Max Results: {max_results}")
+            logger.info(f"  GOOGLE_CSE_API_KEY available: {bool(google_cse_key)}")
+            logger.info(f"  GOOGLE_CSE_ID available: {bool(google_cse_id)}")
+            print(f"🔍 [CONFIG CHAT] WEB SEARCH INITIATED - Query: '{query}'")
+            
+            # Check if Google CSE is configured
+            if not google_cse_key or not google_cse_id:
+                error_msg = "Google Custom Search API not configured. Please set GOOGLE_CSE_API_KEY and GOOGLE_CSE_ID environment variables."
+                logger.error(f"❌ [CONFIG CHAT] {error_msg}")
+                print(f"❌ [CONFIG CHAT] {error_msg}")
+                return error_msg
+            
+            try:
+                logger.info(f"🔍 [CONFIG CHAT] Using Google Custom Search API")
+                print(f"🔍 [CONFIG CHAT] Using Google Custom Search API")
+                
+                url = f"https://www.googleapis.com/customsearch/v1?key={google_cse_key}&cx={google_cse_id}&q={urllib.parse.quote(query)}&num={min(max_results, 10)}"
+                
+                req = urllib.request.Request(
+                    url=url,
+                    headers={"User-Agent": "Wrap-X/1.0"},
+                    method="GET",
+                )
+                
+                logger.info(f"🔍 [CONFIG CHAT] Sending Google CSE request")
+                print(f"🔍 [CONFIG CHAT] Sending Google CSE request")
+                
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                
+                logger.info(f"✅ [CONFIG CHAT] Google CSE response received")
+                print(f"✅ [CONFIG CHAT] Google CSE response received")
+                
+                results = data.get("items", [])[:max_results]
+                logger.info(f"🔍 [CONFIG CHAT] Found {len(results)} results")
+                print(f"🔍 [CONFIG CHAT] Found {len(results)} results")
+                
+                lines = [
+                    f"- {r.get('title')}: {r.get('snippet')} (source: {r.get('link')})"
+                    for r in results
+                ]
+                
+                result_text = "Search results:\n" + "\n".join(lines) if lines else "No results found."
+                logger.info(f"✅ [CONFIG CHAT] Google CSE search completed - Found {len(lines)} results")
+                print(f"✅ [CONFIG CHAT] Google CSE search completed - Found {len(lines)} results")
+                return result_text
+                
+            except (HTTPError, URLError, Exception) as e:
+                logger.error(f"❌ [CONFIG CHAT] Web search error: {e}")
+                print(f"❌ [CONFIG CHAT] Web search error: {e}")
+                return f"Web search failed: {e}"
+
+        # Prepare API params - add tools for web search and tool generation
+        api_params = {
+            "model": settings.openai_model,  # Configurable model (default: gpt-4o-mini)
+            "messages": convo,
+            "temperature": 0.3,
+            "max_tokens": 2000,
+            "response_format": {"type": "json_object"},
+        }
+
+        # Add tools with error handling
         try:
-            response = client.chat.completions.create(
-                model=settings.openai_model,  # Configurable model (default: gpt-4o-mini)
-                messages=convo,
-                temperature=0.3,
-                max_tokens=2000,
-                response_format={"type": "json_object"}
-            )
+            api_params["tools"] = config_chat_tools
+            if tool_choice_setting:
+                api_params["tool_choice"] = tool_choice_setting
+            logger.info(f"[Config Chat] Added {len(config_chat_tools)} tools (web_search, generate_tool), tool_choice={tool_choice_setting}")
+        except Exception as tools_err:
+            logger.warning(f"[Config Chat] Failed to add tools: {tools_err}")
+            # Continue without tools
+
+        # Emit thinking_started event (always enabled for config chat)
+        config_events.append({
+            "type": "thinking_started",
+            "focus": "Analyzing user request and determining configuration needs"
+        })
+        logger.info(f"[Config Chat] Thinking started")
+        print(f"🤔 [CONFIG CHAT] THINKING_STARTED event emitted")
+        print(f"🤔 [CONFIG CHAT] Total events so far: {len(config_events)}")
+        
+        # Use OpenAI JSON mode; fallback if provider rejects response_format or tools
+        try:
+            response = client.chat.completions.create(**api_params)
         except Exception as e:
             emsg = str(e).lower()
+            # Some errors require retry without certain features
             if "must contain the word 'json'" in emsg and "response_format" in emsg:
                 # Retry without response_format; add explicit lowercase json instruction
                 convo_fb = list(convo)
                 convo_fb.insert(1, {"role": "system", "content": "Return only valid json. No markdown, no code fences, no extra text."})
-                response = client.chat.completions.create(
-                    model=settings.openai_model,
-                    messages=convo_fb,
-                    temperature=0.3,
-                    max_tokens=2000
-                )
+                api_params_fb = dict(api_params)
+                api_params_fb.pop("response_format", None)
+                api_params_fb["messages"] = convo_fb
+                response = client.chat.completions.create(**api_params_fb)
+            elif "tools" in emsg or "function" in emsg or "tool_choice" in emsg:
+                # Model doesn't support function calling - retry without tools
+                logger.warning(f"Config chat model doesn't support tools, disabling web search and tool generation: {e}")
+                api_params_no_tools = dict(api_params)
+                api_params_no_tools.pop("tools", None)
+                api_params_no_tools.pop("tool_choice", None)
+                response = client.chat.completions.create(**api_params_no_tools)
             else:
                 raise
+
+        # Handle tool calls (web search, tool generation)
+        choice = response.choices[0]
         
-        result_text = response.choices[0].message.content.strip()
+        # Extract thinking content from first response (if any)
+        first_response_content = choice.message.content
+        print(f"🤔 [CONFIG CHAT] First response content check:")
+        print(f"🤔 [CONFIG CHAT]   - Has content attribute: {hasattr(choice.message, 'content')}")
+        print(f"🤔 [CONFIG CHAT]   - Content value: {first_response_content}")
+        print(f"🤔 [CONFIG CHAT]   - Content is not None: {first_response_content is not None}")
+        print(f"🤔 [CONFIG CHAT]   - Content stripped length: {len(first_response_content.strip()) if first_response_content else 0}")
+        
+        if first_response_content and first_response_content.strip():
+            config_events.append({
+                "type": "thinking_content",
+                "content": first_response_content.strip()
+            })
+            logger.info(f"[Config Chat] Thinking content extracted: {len(first_response_content)} chars")
+            print(f"🤔 [CONFIG CHAT] THINKING_CONTENT event emitted: {len(first_response_content)} chars")
+            print(f"🤔 [CONFIG CHAT] Content preview: {first_response_content[:100]}...")
+        else:
+            # If no thinking content but we have tool calls, add a note that thinking is happening
+            # This ensures the UI shows thinking indicator even if model doesn't output text
+            has_tool_calls = hasattr(choice.message, 'tool_calls') and choice.message.tool_calls
+            print(f"🤔 [CONFIG CHAT] No thinking content found. Has tool calls: {has_tool_calls}")
+            if has_tool_calls:
+                config_events.append({
+                    "type": "thinking_content",
+                    "content": "Analyzing request and preparing to use tools..."
+                })
+                logger.info(f"[Config Chat] No thinking text from model, added fallback thinking content")
+                print(f"🤔 [CONFIG CHAT] FALLBACK THINKING_CONTENT event emitted (no text from model)")
+        print(f"🤔 [CONFIG CHAT] Total events after thinking extraction: {len(config_events)}")
+        
+        if hasattr(choice.message, 'tool_calls') and choice.message.tool_calls:
+            logger.info(f"[Config Chat] Model requested {len(choice.message.tool_calls)} tool calls")
+            # Model wants to search the web - execute and continue
+            tool_calls = choice.message.tool_calls
+            # Add assistant message with tool_calls
+            convo.append({
+                "role": "assistant",
+                "content": choice.message.content,
+                "tool_calls": [
+                    {
+                        "id": tc.id,
+                        "type": tc.type,
+                        "function": {"name": tc.function.name, "arguments": tc.function.arguments}
+                    }
+                    for tc in tool_calls
+                ]
+            })
+            # Execute each tool call with comprehensive error handling
+            for tc in tool_calls:
+                try:
+                    if tc.function.name == "web_search":
+                        try:
+                            args = json.loads(tc.function.arguments)
+                            query = args.get("query", "")
+                            max_results = args.get("max_results", 5)
+                            
+                            # Emit tool_call event for frontend
+                            tool_call_event = {
+                                "type": "tool_call",
+                                "name": "web_search",
+                                "args": args
+                            }
+                            config_events.append(tool_call_event)
+                            logger.info(f"🔍 [CONFIG CHAT] Executing web_search tool - Query: '{query}', Max Results: {max_results}")
+                            print(f"🔍 [CONFIG CHAT] ========== WEB SEARCH TOOL CALL ==========")
+                            print(f"🔍 [CONFIG CHAT] TOOL_CALL event emitted: {tool_call_event}")
+                            print(f"🔍 [CONFIG CHAT] Query: '{query}', Max Results: {max_results}")
+                            print(f"🔍 [CONFIG CHAT] Total events before search: {len(config_events)}")
+                            
+                            search_result = execute_web_search(query, max_results)
+                            
+                            # Calculate results count
+                            results_count = len(search_result.split("\n")) if search_result else 0
+                            
+                            # Emit tool_result event for frontend
+                            tool_result_event = {
+                                "type": "tool_result",
+                                "name": "web_search",
+                                "query": query,
+                                "results_count": results_count
+                            }
+                            config_events.append(tool_result_event)
+                            logger.info(f"✅ [CONFIG CHAT] Web search completed - Query: '{query}', Results: {len(search_result)} chars")
+                            print(f"✅ [CONFIG CHAT] ========== WEB SEARCH COMPLETED ==========")
+                            print(f"✅ [CONFIG CHAT] TOOL_RESULT event emitted: {tool_result_event}")
+                            print(f"✅ [CONFIG CHAT] Query: '{query}', Results: {results_count} lines, {len(search_result)} chars")
+                            print(f"✅ [CONFIG CHAT] Total events after search: {len(config_events)}")
+                        except Exception as search_err:
+                            logger.error(f"Config chat search execution error: {search_err}")
+                            print(f"❌ [CONFIG CHAT] Search execution error: {search_err}")
+                            search_result = f"Search failed: {search_err}"
+                            # Emit error event
+                            config_events.append({
+                                "type": "tool_result",
+                                "name": "web_search",
+                                "query": query if 'query' in locals() else "",
+                                "results_count": 0,
+                                "error": str(search_err)
+                            })
+                        # Add tool result to conversation
+                        convo.append({
+                            "role": "tool",
+                            "tool_call_id": tc.id,
+                            "name": "web_search",
+                            "content": search_result
+                        })
+                    elif tc.function.name == "generate_tool":
+                        # Handle tool generation with full error handling
+                        try:
+                            from app.services.tool_generator import generate_custom_tool
+                        except ImportError as import_err:
+                            logger.error(f"[Config Chat] Failed to import tool_generator: {import_err}")
+                            convo.append({
+                                "role": "tool",
+                                "tool_call_id": tc.id,
+                                "name": "generate_tool",
+                                "content": json.dumps({"success": False, "error": f"Tool generator not available: {str(import_err)}"})
+                            })
+                            continue
+
+                        try:
+                            args = json.loads(tc.function.arguments)
+                            tool_name = args.get("tool_name", "")
+                            tool_description = args.get("tool_description", "")
+                            user_requirements = args.get("user_requirements")
+
+                            if not tool_name or not tool_description:
+                                raise ValueError("Tool name and description are required")
+
+                            logger.info(f"[Config Chat] Generating tool: {tool_name}")
+
+                            tool_result = await generate_custom_tool(tool_name, tool_description, user_requirements)
+
+                            if tool_result.get("success"):
+                                result_json = json.dumps({
+                                    "success": True,
+                                    "tool_name": tool_result["tool_name"],
+                                    "display_name": tool_result["display_name"],
+                                    "description": tool_result["description"],
+                                    "credential_fields": tool_result["credential_fields"],
+                                    "tool_code": tool_result["tool_code"]
+                                })
+                                logger.info(f"[Config Chat] Tool generated: {tool_result['tool_name']}")
+                            else:
+                                result_json = json.dumps({"success": False, "error": tool_result.get("error", "Unknown error")})
+                                logger.error(f"[Config Chat] Tool generation failed: {tool_result.get('error')}")
+
+                            convo.append({
+                                "role": "tool",
+                                "tool_call_id": tc.id,
+                                "name": "generate_tool",
+                                "content": result_json
+                            })
+                        except Exception as gen_err:
+                            logger.error(f"[Config Chat] Tool generation error: {gen_err}", exc_info=True)
+                            convo.append({
+                                "role": "tool",
+                                "tool_call_id": tc.id,
+                                "name": "generate_tool",
+                                "content": json.dumps({"success": False, "error": f"Tool generation failed: {str(gen_err)}"})
+                            })
+                except Exception as tool_exec_err:
+                    logger.error(f"[Config Chat] Tool execution failed for {tc.function.name}: {tool_exec_err}", exc_info=True)
+                    # Add error result
+                    convo.append({
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "name": tc.function.name,
+                        "content": json.dumps({"error": f"Tool execution failed: {str(tool_exec_err)}"})
+                    })
+            # Emit reasoning_started event (reasoning phase begins after tools)
+            config_events.append({
+                "type": "reasoning_started",
+                "focus": "Analyzing tool results and formulating final configuration"
+            })
+            logger.info(f"[Config Chat] Reasoning started")
+            print(f"🔍 [CONFIG CHAT] ========== REASONING STARTED ==========")
+            print(f"🔍 [CONFIG CHAT] REASONING_STARTED event emitted")
+            print(f"🔍 [CONFIG CHAT] Total events before reasoning: {len(config_events)}")
+            
+            # Make second API call with tool results
+            api_params["messages"] = convo
+            logger.info(f"[Config Chat] Making second API call after tool execution")
+            try:
+                response = client.chat.completions.create(**api_params)
+                logger.info(f"[Config Chat] Second API call successful")
+            except Exception as e2:
+                logger.error(f"[Config Chat] Second API call failed: {e2}", exc_info=True)
+                emsg2 = str(e2).lower()
+                if "must contain the word 'json'" in emsg2:
+                    convo.insert(1, {"role": "system", "content": "Return only valid json."})
+                    api_params_fb2 = dict(api_params)
+                    api_params_fb2.pop("response_format", None)
+                    api_params_fb2["messages"] = convo
+                    response = client.chat.completions.create(**api_params_fb2)
+                else:
+                    raise
+        
+        # Safely extract content, handling None/empty responses
+        content = response.choices[0].message.content
+        result_text = (content or "").strip()
+        
+        # Extract reasoning content from final response (if any)
+        print(f"🔍 [CONFIG CHAT] Final response text check:")
+        print(f"🔍 [CONFIG CHAT]   - Result text: {result_text[:100] if result_text else 'None'}...")
+        print(f"🔍 [CONFIG CHAT]   - Result text length: {len(result_text) if result_text else 0}")
+        if result_text and result_text.strip():
+            # Check if this is reasoning content (before JSON parsing)
+            # If it contains structured thinking/reasoning, extract it
+            reasoning_content = result_text.strip()
+            config_events.append({
+                "type": "reasoning_content",
+                "content": reasoning_content[:500]  # Limit to first 500 chars for display
+            })
+            logger.info(f"[Config Chat] Reasoning content extracted: {len(reasoning_content)} chars")
+            print(f"🔍 [CONFIG CHAT] REASONING_CONTENT event emitted: {len(reasoning_content)} chars")
+            print(f"🔍 [CONFIG CHAT] Content preview: {reasoning_content[:100]}...")
+        else:
+            print(f"🔍 [CONFIG CHAT] No reasoning content found in final response")
+        print(f"🔍 [CONFIG CHAT] Total events before completion: {len(config_events)}")
+        
+        # Emit reasoning_completed and thinking_completed events
+        config_events.append({
+            "type": "reasoning_completed"
+        })
+        config_events.append({
+            "type": "thinking_completed"
+        })
+        logger.info(f"[Config Chat] Thinking and reasoning completed")
+        print(f"✅ [CONFIG CHAT] ========== REASONING COMPLETED ==========")
+        print(f"✅ [CONFIG CHAT] REASONING_COMPLETED event emitted")
+        print(f"✅ [CONFIG CHAT] THINKING_COMPLETED event emitted")
+        print(f"✅ [CONFIG CHAT] Total events at completion: {len(config_events)}")
+        print(f"✅ [CONFIG CHAT] All events: {config_events}")
+        
+        # Check for empty response before attempting JSON parsing
+        if not result_text:
+            logger.error("[Config Chat] Second API call returned empty content")
+            # If we have pending tools from the first call, preserve them
+            # Check if we have any pending tools in the conversation
+            pending_tools = []
+            for msg in convo:
+                if not msg or not isinstance(msg, dict):
+                    continue
+                if msg.get("role") == "tool" and msg.get("name") == "generate_tool":
+                    try:
+                        content = msg.get("content")
+                        if not content:
+                            continue
+                        tool_data = json.loads(content if isinstance(content, str) else "{}")
+                        if tool_data.get("success") and tool_data.get("tool_name"):
+                            # Use credential_fields from tool generator, normalize to fields for frontend
+                            credential_fields = tool_data.get("credential_fields", [])
+                            pending_tools.append({
+                                "name": tool_data.get("tool_name"),
+                                "display_name": tool_data.get("display_name", tool_data.get("tool_name")),
+                                "description": tool_data.get("description"),
+                                "fields": credential_fields  # Frontend expects "fields"
+                            })
+                    except Exception as tool_extract_err:
+                        logger.debug(f"Could not extract tool from message: {tool_extract_err}")
+                        pass
+            
+            return {
+                "error": "Config assistant returned an empty response after tool execution.",
+                "response_message": "Sorry, I couldn't finish generating that integration. Please try again.",
+                "pending_tools": pending_tools if pending_tools else None
+            }
+        
         logger.info(f"Raw OpenAI response: {result_text[:200]}")
-        
-        # Extract JSON from response (might have markdown code blocks)
-        if result_text.startswith("```"):
-            # Find the first ``` and the next ```
-            parts = result_text.split("```")
-            if len(parts) >= 2:
-                # Get content between first and second ```
-                code_content = parts[1]
-                # Remove "json" prefix if present
-                if code_content.startswith("json"):
-                    code_content = code_content[4:]
-                result_text = code_content.strip()
-            else:
-                # Try to extract JSON from markdown
-                result_text = result_text.replace("```json", "").replace("```", "").strip()
-        
-        # Try to find JSON object in the text (in case there's extra text)
-        json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', result_text, re.DOTALL)
-        if json_match:
-            result_text = json_match.group(0)
-        
-        result_text = result_text.strip()
-        logger.info(f"Extracted JSON text: {result_text[:200]}")
-        
+
+        # Helper to strip code fences and parse JSON
+        def _clean_and_parse_json(text: str) -> Dict[str, Any]:
+            cleaned = text.strip()
+            if cleaned.startswith("```"):
+                parts = cleaned.split("```")
+                if len(parts) >= 2:
+                    code_content = parts[1]
+                    if code_content.startswith("json"):
+                        code_content = code_content[4:]
+                    cleaned = code_content.strip()
+                else:
+                    cleaned = cleaned.replace("```json", "").replace("```", "").strip()
+
+            try:
+                return json.loads(cleaned)
+            except json.JSONDecodeError:
+                # Fallback: try to extract the first JSON object substring
+                json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', cleaned, re.DOTALL)
+                if json_match:
+                    candidate = json_match.group(0).strip()
+                    try:
+                        return json.loads(candidate)
+                    except json.JSONDecodeError:
+                        pass
+                raise
+
+        # Attempt to parse JSON payload
         try:
-            parsed = json.loads(result_text)
+            parsed = _clean_and_parse_json(result_text)
+            logger.info(f"Extracted JSON text: {json.dumps(parsed)[:200]}")
             logger.info(f"Successfully parsed command: {parsed}")
+
+            def _normalize_pending_tools(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+                raw_tools = None
+                if isinstance(payload.get("pending_tools"), list):
+                    raw_tools = payload.get("pending_tools")
+                elif isinstance(payload.get("pendingTools"), list):
+                    raw_tools = payload.get("pendingTools")
+                elif payload.get("pending_tool"):
+                    maybe_tool = payload.get("pending_tool")
+                    raw_tools = maybe_tool if isinstance(maybe_tool, list) else [maybe_tool]
+
+                if not raw_tools:
+                    return []
+
+                normalized_list: List[Dict[str, Any]] = []
+                for tool in raw_tools:
+                    if not isinstance(tool, dict):
+                        continue
+                    name = tool.get("name") or tool.get("tool_name") or tool.get("toolName")
+                    display_name = tool.get("display_name") or tool.get("displayName") or name
+                    credential_fields = tool.get("fields") or tool.get("credential_fields") or tool.get("credentialFields") or []
+                    normalized_tool = {
+                        "name": name or display_name or "custom_integration",
+                        "display_name": display_name or name or "Custom Integration",
+                        "description": tool.get("description"),
+                        "icon": tool.get("icon"),
+                        "fields": credential_fields
+                    }
+                    if tool.get("requires_oauth"):
+                        normalized_tool["requires_oauth"] = True
+                        normalized_tool["oauth_provider"] = tool.get("oauth_provider")
+                        normalized_tool["oauth_scopes"] = tool.get("oauth_scopes") or []
+                        normalized_tool["oauth_instructions"] = tool.get("oauth_instructions")
+                    normalized_list.append(normalized_tool)
+                return normalized_list
+
+            pending_tools = _normalize_pending_tools(parsed)
+            
+            # CRITICAL FIX: If tools were mentioned but not in response, extract from tool calls
+            if not pending_tools and mentions_tools:
+                logger.warning("[Config Chat] Tools mentioned but not in response - extracting from tool calls")
+                for msg in convo:
+                    if not msg or not isinstance(msg, dict):
+                        continue
+                    if msg.get("role") == "tool" and msg.get("name") == "generate_tool":
+                        try:
+                            content = msg.get("content")
+                            if not content:
+                                continue
+                            tool_data = json.loads(content if isinstance(content, str) else "{}")
+                            if tool_data.get("success") and tool_data.get("tool_name"):
+                                credential_fields = tool_data.get("credential_fields", [])
+                                pending_tools.append({
+                                    "name": tool_data.get("tool_name"),
+                                    "display_name": tool_data.get("display_name", tool_data.get("tool_name")),
+                                    "description": tool_data.get("description", ""),
+                                    "fields": credential_fields,
+                                    "tool_code": tool_data.get("tool_code"),
+                                    "requires_oauth": tool_data.get("requires_oauth", False),
+                                    "oauth_provider": tool_data.get("oauth_provider"),
+                                    "oauth_scopes": tool_data.get("oauth_scopes", []),
+                                    "oauth_instructions": tool_data.get("oauth_instructions", "")
+                                })
+                        except Exception as extract_err:
+                            logger.debug(f"Could not extract tool from conversation: {extract_err}")
+                            pass
+                
+                if pending_tools:
+                    logger.info(f"[Config Chat] Extracted {len(pending_tools)} tools from conversation")
+                    parsed["pending_tools"] = pending_tools
+                    parsed["pendingTools"] = pending_tools
+                    if "response_message" not in parsed or not parsed.get("response_message"):
+                        parsed["response_message"] = f"I've set up {len(pending_tools)} integration(s). Please provide your credentials."
+            
+            # Extract tool data from conversation to preserve instructions from tool generator
+            for msg in convo:
+                if not msg or not isinstance(msg, dict):
+                    continue
+                if msg.get("role") == "tool" and msg.get("name") == "generate_tool":
+                    try:
+                        content = msg.get("content")
+                        if not content:
+                            continue
+                        tool_data = json.loads(content if isinstance(content, str) else "{}")
+                        if tool_data.get("success") and tool_data.get("credential_fields"):
+                            # Find matching tool in pending_tools and merge instructions
+                            tool_name = tool_data.get("tool_name")
+                            tool_display_name = tool_data.get("display_name")
+                            
+                            for pending_tool in pending_tools:
+                                # Match by name or display_name
+                                if (pending_tool.get("name") == tool_name or 
+                                    pending_tool.get("name") == tool_display_name or
+                                    pending_tool.get("display_name") == tool_name or
+                                    pending_tool.get("display_name") == tool_display_name):
+                                    
+                                    # Get fields from tool generator (with instructions)
+                                    tool_fields = tool_data.get("credential_fields", [])
+                                    pending_fields = pending_tool.get("fields", [])
+                                    
+                                    # Create a map of pending fields by name for quick lookup
+                                    field_map = {f.get("name"): f for f in pending_fields}
+                                    
+                                    # Merge instructions from tool generator into pending fields
+                                    for tool_field in tool_fields:
+                                        field_name = tool_field.get("name")
+                                        if field_name in field_map:
+                                            # Preserve all properties from tool generator field
+                                            if tool_field.get("instructions"):
+                                                field_map[field_name]["instructions"] = tool_field.get("instructions")
+                                            # Also preserve other properties that might be missing
+                                            if tool_field.get("placeholder") and not field_map[field_name].get("placeholder"):
+                                                field_map[field_name]["placeholder"] = tool_field.get("placeholder")
+                                            if tool_field.get("helpText") and not field_map[field_name].get("helpText"):
+                                                field_map[field_name]["helpText"] = tool_field.get("helpText")
+                                        else:
+                                            # Field from tool generator not in pending - add it
+                                            field_map[field_name] = tool_field
+                                    
+                                    # Update pending_tool with merged fields
+                                    pending_tool["fields"] = list(field_map.values())
+                                    if tool_data.get("requires_oauth"):
+                                        pending_tool["requires_oauth"] = True
+                                        pending_tool["oauth_provider"] = tool_data.get("oauth_provider")
+                                        pending_tool["oauth_scopes"] = tool_data.get("oauth_scopes")
+                                        pending_tool["oauth_instructions"] = tool_data.get("oauth_instructions")
+                                    break
+                    except Exception as merge_err:
+                        logger.debug(f"Could not merge tool instructions: {merge_err}")
+                        pass
+            
+            # Final safety check: If tools were generated but not in response, add them
+            if not pending_tools:
+                for msg in convo:
+                    if not msg or not isinstance(msg, dict):
+                        continue
+                    if msg.get("role") == "tool" and msg.get("name") == "generate_tool":
+                        try:
+                            content = msg.get("content")
+                            if not content:
+                                continue
+                            tool_data = json.loads(content if isinstance(content, str) else "{}")
+                            if tool_data.get("success") and tool_data.get("tool_name"):
+                                if not pending_tools:
+                                    pending_tools = []
+                                credential_fields = tool_data.get("credential_fields", [])
+                                pending_tools.append({
+                                    "name": tool_data.get("tool_name"),
+                                    "display_name": tool_data.get("display_name", tool_data.get("tool_name")),
+                                    "description": tool_data.get("description", ""),
+                                    "fields": credential_fields,
+                                    "tool_code": tool_data.get("tool_code"),
+                                    "requires_oauth": tool_data.get("requires_oauth", False),
+                                    "oauth_provider": tool_data.get("oauth_provider"),
+                                    "oauth_scopes": tool_data.get("oauth_scopes", []),
+                                    "oauth_instructions": tool_data.get("oauth_instructions", "")
+                                })
+                        except Exception as final_extract_err:
+                            logger.debug(f"Final tool extraction failed: {final_extract_err}")
+                            pass
+            
+            if pending_tools:
+                parsed["pending_tools"] = pending_tools
+                parsed["pendingTools"] = pending_tools  # legacy casing for any existing consumers
+                logger.info(f"[Config Chat] Final: Added {len(pending_tools)} tools to response")
+
+            # Add events to response for frontend (always include, even if empty)
+            parsed["events"] = config_events
+            parsed["wx_events"] = config_events  # legacy name for compatibility
+            if config_events:
+                logger.info(f"[Config Chat] Added {len(config_events)} events to response")
+                print(f"📤 [CONFIG CHAT] ========== SENDING EVENTS TO FRONTEND ==========")
+                print(f"📤 [CONFIG CHAT] Total events: {len(config_events)}")
+                print(f"📤 [CONFIG CHAT] Events list:")
+                for i, ev in enumerate(config_events, 1):
+                    print(f"📤 [CONFIG CHAT]   Event {i}: {ev.get('type')} - {ev}")
+                print(f"📤 [CONFIG CHAT] Events added to parsed['events']: {parsed.get('events')}")
+                print(f"📤 [CONFIG CHAT] Events added to parsed['wx_events']: {parsed.get('wx_events')}")
+            else:
+                print(f"⚠️ [CONFIG CHAT] WARNING: No events to send! config_events is empty")
+
+            # Ensure response_message is always present
+            if "response_message" not in parsed:
+                if pending_tools:
+                    tool_names = [t.get("display_name", t.get("name", "integration")) for t in pending_tools]
+                    parsed["response_message"] = f"I've set up {', '.join(tool_names)} integration(s). Please provide your credentials in the form that just appeared."
+                else:
+                    logger.error(f"Config chat response missing response_message field. Parsed: {parsed}")
+                    return {
+                        "error": "Config assistant failed to generate response",
+                        "response_message": "Sorry, I encountered an error. Please try again."
+                    }
 
             # --- PATCH: Only apply/validate config if all required fields are valid ---
             required_fields = ["tone", "model"]
@@ -585,7 +951,10 @@ TROUBLESHOOTING:
                 )
             ):
                 logger.info(f"[Config Chat] Returning greeting/step: response_message only (no config update). Model valid: {valid_model_field()}, Examples valid: {valid_examples_field()}. Parsed: {parsed}")
-                return {"response_message": parsed["response_message"]}
+                result_payload = {"response_message": parsed["response_message"]}
+                if parsed.get("pending_tools"):
+                    result_payload["pending_tools"] = parsed["pending_tools"]
+                return result_payload
             # Always log the full parsed response for every turn
             logger.info(f"[Config Chat] LLM parsed output: {parsed}")
             
@@ -616,9 +985,12 @@ TROUBLESHOOTING:
             logger.info(f"🔍 [Config Chat] Model valid: {valid_model_field()}")
             logger.info(f"🔍 [Config Chat] Examples valid: {valid_examples_field()}")
             logger.info(f"🔍 [Config Chat] Critical Test Chat fields check:")
-            logger.info(f"   - role: {'✅' if parsed.get('role') else '❌ MISSING'} = {parsed.get('role', 'NONE')[:50] if parsed.get('role') else 'NONE'}")
-            logger.info(f"   - instructions: {'✅' if parsed.get('instructions') else '❌ MISSING'} = {parsed.get('instructions', 'NONE')[:50] if parsed.get('instructions') else 'NONE'}")
-            logger.info(f"   - model: {'✅' if parsed.get('model') else '❌ MISSING'} = {parsed.get('model', 'NONE')}")
+            role_val = parsed.get('role')
+            instructions_val = parsed.get('instructions')
+            model_val = parsed.get('model')
+            logger.info(f"   - role: {'✅' if role_val else '❌ MISSING'} = {str(role_val)[:50] if role_val else 'NONE'}")
+            logger.info(f"   - instructions: {'✅' if instructions_val else '❌ MISSING'} = {str(instructions_val)[:50] if instructions_val else 'NONE'}")
+            logger.info(f"   - model: {'✅' if model_val else '❌ MISSING'} = {str(model_val) if model_val else 'NONE'}")
             
             if valid_model_field() and valid_examples_field() and not missing_final:
                 parsed["config_status"] = "ready"
@@ -647,13 +1019,21 @@ TROUBLESHOOTING:
             error_msg = f"JSON parsing failed: {str(json_err)}"
             return {"error": error_msg}
         
-    except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse JSON from OpenAI response: {e}")
+    except json.JSONDecodeError as json_err:
+        logger.error(f"Failed to parse JSON from OpenAI response: {json_err}")
         logger.error(f"Response text: {result_text if 'result_text' in locals() else 'N/A'}")
-        return {"error": f"Failed to parse command: {str(e)}"}
+        return {
+            "error": f"Failed to parse command: {str(json_err)}",
+            "response_message": "Sorry, I couldn't understand the response format. Please try again."
+        }
     except Exception as e:
-        logger.error(f"Error parsing chat command: {e}", exc_info=True)
-        return {"error": str(e)}
+        logger.error(f"❌ [Config Chat] CRITICAL ERROR in parse_chat_command: {e}", exc_info=True)
+        logger.error(f"❌ [Config Chat] Message: {message[:100] if message else 'None'}")
+        logger.error(f"❌ [Config Chat] Current config keys: {list(current_config.keys()) if current_config else 'None'}")
+        return {
+            "error": str(e),
+            "response_message": f"Sorry, I encountered an error: {str(e)}. Please try again or contact support."
+        }
 
 
 def build_system_prompt(prompt_config: Optional[PromptConfig]) -> str:
@@ -772,6 +1152,38 @@ async def call_wrapped_llm(
         
         # Build system prompt
         system_prompt = build_system_prompt(wrapped_api.prompt_config)
+
+        # Inject uploaded documents into system prompt
+        try:
+            from app.models.uploaded_document import UploadedDocument
+            docs_result = await db.execute(
+                select(UploadedDocument)
+                .where(UploadedDocument.wrapped_api_id == wrapped_api.id)
+                .order_by(UploadedDocument.created_at.desc())
+            )
+            documents = docs_result.scalars().all()
+            if documents:
+                doc_context = "\n\n=== UPLOADED DOCUMENTS ===\n"
+                for doc in documents:
+                    doc_name = doc.filename or "Untitled Document"
+                    if doc.extracted_text:
+                        # Use full extracted text
+                        doc_context += f"\n--- {doc_name} ---\n{doc.extracted_text}\n"
+                    else:
+                        # Fallback to preview
+                        preview = extract_text_preview(
+                            content_b64=doc.content,
+                            file_type=doc.file_type,
+                            mime_type=doc.mime_type,
+                            max_chars=1000
+                        )
+                        if preview:
+                            doc_context += f"\n--- {doc_name} (preview) ---\n{preview}\n"
+                doc_context += "\n=== END OF DOCUMENTS ===\n"
+                system_prompt = (system_prompt + doc_context).strip()
+        except Exception as doc_err:
+            logger.warning(f"Failed to inject documents into system prompt: {doc_err}")
+
         # Append thinking/web search configuration for clearer behavior
         try:
             tm = getattr(wrapped_api, 'thinking_mode', None)
@@ -797,7 +1209,7 @@ async def call_wrapped_llm(
         
         # Get model - use provider-specific defaults
         default_models = {
-            "openai": "gpt-3.5-turbo",
+            "openai": "gpt-4-turbo",  # Changed to GPT-4 for better function calling
             "anthropic": "claude-3-haiku-20240307",
             "deepseek": "deepseek-chat",
             "groq": "llama-3.1-8b-instant",
@@ -807,8 +1219,8 @@ async def call_wrapped_llm(
             "together_ai": "meta-llama/Llama-2-7b-chat-hf",
             "perplexity": "llama-3.1-sonar-small-128k-online",
             "anyscale": "meta-llama/Llama-2-7b-chat-hf",
-            "azure": "gpt-3.5-turbo",
-            "openrouter": "openai/gpt-3.5-turbo",
+            "azure": "gpt-4-turbo",  # Changed to GPT-4
+            "openrouter": "openai/gpt-4-turbo",  # Changed to GPT-4
         }
         default_model = default_models.get(provider.provider_name, "gpt-3.5-turbo")
         model = wrapped_api.model or default_model
@@ -838,79 +1250,238 @@ async def call_wrapped_llm(
         
         if provider.api_base_url:
             params["api_base"] = provider.api_base_url
-        
-        # Define web_search tool if none explicitly provided
-        def tool_defs() -> List[dict]:
-            return [
-                {
-                    "type": "function",
-                    "function": {
-                        "name": "web_search",
-                        "description": "Search the web and return a concise summary of top results with sources.",
-                        "parameters": {
-                            "type": "object",
-                            "properties": {
-                                "query": {"type": "string"},
-                                "max_results": {"type": "integer", "minimum": 1, "maximum": 10, "default": 5}
-                            },
-                            "required": ["query"]
+
+        # Load custom tools from database
+        custom_tools_data = {}  # Store tool code and credentials
+        async def load_custom_tools() -> List[dict]:
+            """Load custom tools from wrap_tools and wrap_credentials tables"""
+            tool_definitions = []
+            try:
+                # Import models locally to avoid circular dependency
+                from app.models.wrap_tool import WrapTool
+                from app.models.wrap_credential import WrapCredential
+
+                # Load custom tools for this wrap
+                tools_result = await db.execute(
+                    select(WrapTool).where(
+                        WrapTool.wrap_id == wrapped_api.id,
+                        WrapTool.is_active == True
+                    )
+                )
+                custom_tools = tools_result.scalars().all()
+
+                # Load credentials for this wrap
+                creds_result = await db.execute(
+                    select(WrapCredential).where(WrapCredential.wrap_id == wrapped_api.id)
+                )
+                credentials_map = {cred.tool_name: cred for cred in creds_result.scalars().all()}
+
+                # Build tool definitions and store execution data
+                for tool in custom_tools:
+                    # Get credentials for this tool
+                    cred = credentials_map.get(tool.tool_name)
+                    if cred:
+                        # Decrypt credentials
+                        decrypted_creds = decrypt_api_key(cred.credentials_json)
+                        creds_dict = json.loads(decrypted_creds)
+                    else:
+                        logger.warning(f"No credentials found for tool: {tool.tool_name}")
+                        creds_dict = {}
+
+                    # Store tool code and credentials for execution
+                    custom_tools_data[tool.tool_name] = {
+                        "code": tool.tool_code,
+                        "credentials": creds_dict,
+                        "description": tool.description
+                    }
+
+                    # Create tool definition for LLM
+                    tool_def = {
+                        "type": "function",
+                        "function": {
+                            "name": tool.tool_name,
+                            "description": tool.description or f"Execute {tool.tool_name}",
+                            "parameters": {
+                                "type": "object",
+                                "properties": {},
+                                "required": []
+                            }
                         }
                     }
-                }
-            ]
+                    tool_definitions.append(tool_def)
+                    logger.info(f"Loaded custom tool: {tool.tool_name}")
 
-        # Check if web_search is enabled via enum or legacy toggle
+            except Exception as e:
+                logger.error(f"Error loading custom tools: {e}", exc_info=True)
+
+            return tool_definitions
+
+        # Define built-in tools
+        builtin_tools = []
+
+        # Add web_search if enabled
         web_search_mode = getattr(wrapped_api, "web_search", None)
         web_search_enabled_toggle = getattr(wrapped_api, "web_search_enabled", False)
         web_search_active = (web_search_mode is not None and web_search_mode != "off") or web_search_enabled_toggle
         if web_search_active:
-            params["tools"] = tools if tools else tool_defs()
-        else:
-            params["tools"] = tools if tools else []
+            builtin_tools.append({
+                "type": "function",
+                "function": {
+                    "name": "web_search",
+                    "description": "Search the web and return a concise summary of top results with sources.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {"type": "string"},
+                            "max_results": {"type": "integer", "minimum": 1, "maximum": 10, "default": 5}
+                        },
+                        "required": ["query"]
+                    }
+                }
+            })
 
-        # Helper to execute web search
-        def execute_web_search(query: str, max_results: int = 5) -> str:
-            serper_key = os.getenv("SERPER_API_KEY")
-            tavily_key = os.getenv("TAVILY_API_KEY")
+        # Load and combine custom tools
+        custom_tool_defs = await load_custom_tools()
+        all_tools = builtin_tools + custom_tool_defs
+
+        # Set tools parameter
+        if tools:
+            params["tools"] = tools
+        elif all_tools:
+            params["tools"] = all_tools
+        else:
+            params["tools"] = []
+
+        # Helper to execute custom tool code safely
+        async def execute_custom_tool(tool_code: str, credentials: dict, params: dict) -> str:
+            """
+            Execute custom tool code in a controlled environment
+
+            Args:
+                tool_code: Python code with execute_tool function
+                credentials: Decrypted credentials dict
+                params: Runtime parameters from LLM
+
+            Returns:
+                Tool execution result as string
+            """
+            import asyncio
+
             try:
-                if serper_key:
-                    req = urllib.request.Request(
-                        url="https://google.serper.dev/search",
-                        data=json.dumps({"q": query, "num": max_results}).encode("utf-8"),
-                        headers={"Content-Type": "application/json", "X-API-KEY": serper_key},
-                        method="POST",
-                    )
-                    with urllib.request.urlopen(req, timeout=15) as resp:
-                        data = json.loads(resp.read().decode("utf-8"))
-                    results = data.get("organic", [])[:max_results]
-                    lines = [
-                        f"- {r.get('title')}: {r.get('snippet')} (source: {r.get('link')})"
-                        for r in results
-                    ]
-                    return "Search results:\n" + "\n".join(lines) if lines else "No results found."
-                elif tavily_key:
-                    req = urllib.request.Request(
-                        url="https://api.tavily.com/search",
-                        data=json.dumps({"api_key": tavily_key, "query": query, "max_results": max_results}).encode("utf-8"),
-                        headers={"Content-Type": "application/json"},
-                        method="POST",
-                    )
-                    with urllib.request.urlopen(req, timeout=15) as resp:
-                        data = json.loads(resp.read().decode("utf-8"))
-                    results = data.get("results", [])[:max_results]
-                    lines = [
-                        f"- {r.get('title')}: {r.get('content')} (source: {r.get('url')})"
-                        for r in results
-                    ]
-                    return "Search results:\n" + "\n".join(lines) if lines else "No results found."
+                # Create execution namespace with limited builtins
+                namespace = {
+                    "__builtins__": {
+                        "print": print,
+                        "len": len,
+                        "str": str,
+                        "int": int,
+                        "float": float,
+                        "bool": bool,
+                        "dict": dict,
+                        "list": list,
+                        "tuple": tuple,
+                        "range": range,
+                        "enumerate": enumerate,
+                        "zip": zip,
+                        "isinstance": isinstance,
+                        "json": json,
+                        "Exception": Exception,
+                    },
+                    "json": json,
+                    "urllib": urllib,
+                    "os": os,  # Allow os for env vars
+                }
+
+                # Execute the tool code to define execute_tool function
+                exec(tool_code, namespace)
+
+                # Check if execute_tool function exists
+                if "execute_tool" not in namespace:
+                    raise ValueError("Tool code must define execute_tool function")
+
+                execute_tool_fn = namespace["execute_tool"]
+
+                # Execute the tool function
+                # Handle both sync and async functions
+                result = execute_tool_fn(credentials, **params)
+
+                # If result is a coroutine, await it
+                if asyncio.iscoroutine(result):
+                    result = await result
+
+                # Convert result to string if it's a dict
+                if isinstance(result, dict):
+                    return json.dumps(result)
                 else:
-                    return "Web search not configured. Set SERPER_API_KEY or TAVILY_API_KEY."
-            except (HTTPError, URLError, TimeoutError) as e:
-                logger.error(f"Web search error: {e}")
-                return f"Web search failed: {e}"
+                    return str(result)
+
             except Exception as e:
-                logger.error(f"Web search unexpected error: {e}")
-                return f"Web search failed: {e}"
+                logger.error(f"Custom tool execution error: {e}", exc_info=True)
+                raise ValueError(f"Tool execution failed: {str(e)}")
+
+        # Helper to execute web search using Google Custom Search API
+        def execute_web_search(query: str, max_results: int = 5) -> str:
+            google_cse_key = settings.google_cse_api_key
+            google_cse_id = settings.google_cse_id
+
+            logger.info(f"🔍 WEB SEARCH INITIATED")
+            logger.info(f"  Query: '{query}'")
+            logger.info(f"  Max Results: {max_results}")
+            logger.info(f"  GOOGLE_CSE_API_KEY available: {bool(google_cse_key)}")
+            logger.info(f"  GOOGLE_CSE_ID available: {bool(google_cse_id)}")
+
+            # Check if Google CSE is configured
+            if not google_cse_key or not google_cse_id:
+                error_msg = "Google Custom Search API not configured. Please set GOOGLE_CSE_API_KEY and GOOGLE_CSE_ID environment variables."
+                logger.error(f"❌ {error_msg}")
+                return error_msg
+
+            try:
+                logger.info(f"🔍 Using Google Custom Search API")
+                
+                url = f"https://www.googleapis.com/customsearch/v1?key={google_cse_key}&cx={google_cse_id}&q={urllib.parse.quote(query)}&num={min(max_results, 10)}"
+                logger.info(f"  URL: {url}")
+
+                req = urllib.request.Request(
+                    url=url,
+                    headers={"User-Agent": "Wrap-X/1.0"},
+                    method="GET",
+                )
+
+                logger.info(f"  Sending request...")
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+
+                logger.info(f"  ✅ Google CSE response received")
+                logger.info(f"  Response keys: {list(data.keys())}")
+
+                results = data.get("items", [])[:max_results]
+                logger.info(f"  Results found: {len(results)}")
+
+                lines = [
+                    f"- {r.get('title')}: {r.get('snippet')} (source: {r.get('link')})"
+                    for r in results
+                ]
+
+                result_text = "Search results:\n" + "\n".join(lines) if lines else "No results found."
+                logger.info(f"✅ Google CSE search completed: {len(lines)} results")
+                return result_text
+
+            except (HTTPError, URLError, TimeoutError) as e:
+                logger.error(f"❌ Web search HTTP/URL error: {e}")
+                logger.error(f"   Error type: {type(e).__name__}")
+                logger.error(f"   HTTP Code: {getattr(e, 'code', 'N/A')}")
+                logger.error(f"   Reason: {getattr(e, 'reason', 'N/A')}")
+                logger.error(f"   URL: {getattr(e, 'url', 'N/A')}")
+                logger.error(f"   Stack trace:", exc_info=True)
+                return f"Web search failed: {type(e).__name__} - {e}"
+            except Exception as e:
+                logger.error(f"❌ Web search unexpected error: {e}")
+                logger.error(f"   Error type: {type(e).__name__}")
+                logger.error(f"   Error message: {str(e)}")
+                logger.error(f"   Error args: {e.args}")
+                logger.error(f"   Stack trace:", exc_info=True)
+                return f"Web search failed: {type(e).__name__} - {e}"
         
         # If thinking is enabled, note start
         # Check both the new boolean toggle and legacy thinking_mode string
@@ -995,30 +1566,41 @@ async def call_wrapped_llm(
 
         # Handle one round of tool calls (web_search)
         tool_calls = assistant_msg.get("tool_calls") or []
+        logger.info(f"🔧 Tool calls in response: {len(tool_calls)}")
         if tool_calls:
+            logger.info(f"🔧 TOOL CALLS DETECTED - Processing {len(tool_calls)} tool call(s)")
             # Append the assistant message that contains tool_calls first
             formatted_messages.append({
                 "role": "assistant",
                 **{k: v for k, v in assistant_msg.items() if k in ("content", "tool_calls")}
             })
-            for tc in tool_calls:
+            for i, tc in enumerate(tool_calls):
+                logger.info(f"🔧 Tool call {i+1}: {tc}")
                 fn = tc.get("function", {})
                 name = fn.get("name")
                 args_str = fn.get("arguments") or "{}"
+                logger.info(f"  Tool name: {name}")
+                logger.info(f"  Arguments: {args_str}")
+
                 try:
                     args = json.loads(args_str) if isinstance(args_str, str) else args_str
-                except Exception:
+                except Exception as e:
+                    logger.error(f"  ❌ Failed to parse arguments: {e}")
                     args = {"query": str(args_str)}
+
                 # Emit event for UI with dynamic tool information
                 tool_call_event = {"type": "tool_call", "name": name or "tool"}
                 if args:
                     tool_call_event["args"] = args
                 wx_events.append(tool_call_event)
-                
+
                 if name == "web_search":
+                    logger.info(f"  ✅ WEB_SEARCH TOOL TRIGGERED!")
                     query = args.get("query", "")
                     max_results = int(args.get("max_results", 5))
+                    logger.info(f"  Executing web search: '{query}' (max {max_results} results)")
                     result_text = execute_web_search(query, max_results)
+                    logger.info(f"  Web search completed. Result length: {len(result_text)}")
                     # Add search result summary to event
                     wx_events.append({
                         "type": "tool_result",
@@ -1026,6 +1608,30 @@ async def call_wrapped_llm(
                         "query": query,
                         "results_count": len(result_text.split("\n")) if result_text else 0
                     })
+                elif name in custom_tools_data:
+                    # Execute custom tool
+                    tool_data = custom_tools_data[name]
+                    try:
+                        # Execute the custom tool code
+                        result_text = await execute_custom_tool(
+                            tool_code=tool_data["code"],
+                            credentials=tool_data["credentials"],
+                            params=args
+                        )
+                        wx_events.append({
+                            "type": "tool_result",
+                            "name": name,
+                            "success": True
+                        })
+                    except Exception as tool_err:
+                        logger.error(f"Custom tool execution error ({name}): {tool_err}", exc_info=True)
+                        result_text = f"Tool execution failed: {str(tool_err)}"
+                        wx_events.append({
+                            "type": "tool_result",
+                            "name": name,
+                            "success": False,
+                            "error": str(tool_err)
+                        })
                 else:
                     result_text = f"Tool '{name}' is not implemented."
                     wx_events.append({"type": "tool_result", "name": name or "tool"})

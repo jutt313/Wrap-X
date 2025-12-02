@@ -201,3 +201,42 @@ class APIKeyResponse(BaseModel):
     endpoint_id: str = Field(..., description="The endpoint ID")
     endpoint_url: str = Field(..., description="Full endpoint URL")
     key_name: Optional[str] = None
+
+
+class IntegrationField(BaseModel):
+    """Schema for a credential field"""
+    name: str
+    label: str
+    type: str  # 'text', 'password', 'dropdown'
+    required: bool = True
+    placeholder: Optional[str] = None
+    helpText: Optional[str] = None
+    instructions: Optional[str] = None
+    options: Optional[List[str]] = None
+
+
+class IntegrationResponse(BaseModel):
+    """Schema for integration response (credentials are NOT included for security)"""
+    name: str
+    display_name: str
+    description: Optional[str] = None
+    is_connected: bool
+    fields: List[IntegrationField]
+    created_at: datetime
+    updated_at: datetime
+    requires_oauth: Optional[bool] = False
+    oauth_provider: Optional[str] = None
+    oauth_scopes: Optional[List[str]] = None
+
+
+class IntegrationCreate(BaseModel):
+    """Schema for creating/updating an integration"""
+    tool_name: str
+    display_name: str
+    description: Optional[str] = None
+    tool_code: Optional[str] = None
+    credential_fields: List[IntegrationField]
+    credentials: Dict[str, Any]  # The actual credential values to encrypt and save
+    requires_oauth: Optional[bool] = False
+    oauth_provider: Optional[str] = None
+    oauth_scopes: Optional[List[str]] = None

@@ -28,9 +28,10 @@ router = APIRouter(prefix="/api/llm-providers", tags=["llm_providers"])
 # For encryption - validated at startup in main.py
 _encryption_key = getattr(settings, 'encryption_key', None)
 if not _encryption_key:
-    _encryption_key = Fernet.generate_key().decode()
-    logger.warning("ENCRYPTION_KEY not set - using generated key (NOT SECURE for production!)")
-    logger.warning("This key will change on restart, causing data loss. Set ENCRYPTION_KEY in .env")
+    raise RuntimeError(
+        "ENCRYPTION_KEY not configured. "
+        "Set ENCRYPTION_KEY in your .env file before starting the API server."
+    )
 
 try:
     if isinstance(_encryption_key, str):
@@ -38,9 +39,10 @@ try:
     else:
         cipher_suite = Fernet(_encryption_key)
 except Exception as e:
-    logger.error(f"Failed to initialize encryption: {e}")
-    _encryption_key = Fernet.generate_key()
-    cipher_suite = Fernet(_encryption_key)
+    raise RuntimeError(
+        "Invalid ENCRYPTION_KEY. Ensure it is a valid Fernet key generated via "
+        "`openssl rand -base64 32` or Fernet.generate_key()."
+    ) from e
 
 
 def encrypt_api_key(api_key: str) -> str:

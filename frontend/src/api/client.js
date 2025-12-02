@@ -10,30 +10,10 @@ class APIClient {
   async request(endpoint, options = {}) {
     // Use relative URL for Vite proxy, or full URL if in production
     const isDevelopment = import.meta.env.DEV;
-    const isLocalhost = this.baseURL.includes('localhost') || this.baseURL.includes('127.0.0.1');
-    
-    // Determine the final URL
-    let url;
-    if (isDevelopment && isLocalhost) {
-      // Local dev: use relative URL to go through Vite proxy
-      url = endpoint;
-    } else {
-      // Production: always use full baseURL
-      url = `${this.baseURL}${endpoint}`;
-    }
-    
-    // Detailed logging for debugging
-    console.log('🔍 API Request Details:', {
-      isDevelopment,
-      isLocalhost,
-      baseURL: this.baseURL,
-      endpoint,
-      finalURL: url,
-      envVITE_API_URL: import.meta.env.VITE_API_URL,
-      mode: import.meta.env.MODE,
-      dev: import.meta.env.DEV,
-      prod: import.meta.env.PROD
-    });
+    // Always use baseURL in production, or if baseURL is set (not localhost)
+    const url = (isDevelopment && this.baseURL.includes('localhost')) 
+      ? endpoint  // Use relative URL to go through Vite proxy in local dev
+      : `${this.baseURL}${endpoint}`;
     
     // Initialize headers - start with API config headers
     const headers = {
@@ -141,20 +121,9 @@ class APIClient {
         return { message: responseText || 'Success' };
       }
     } catch (error) {
-      console.error('❌ API Request Error:', {
-        error: error.message,
-        url,
-        endpoint,
-        baseURL: this.baseURL,
-        isDevelopment,
-        stack: error.stack
-      });
-      
+      console.error('API Request Error:', error);
       if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
-        const errorMsg = isLocalhost 
-          ? 'Cannot connect to server. Please make sure the backend is running on port 8000.'
-          : `Cannot connect to server at ${this.baseURL}. Please check if the backend is running.`;
-        throw new Error(errorMsg);
+        throw new Error('Cannot connect to server. Please make sure the backend is running on port 8000.');
       }
       throw error;
     }
