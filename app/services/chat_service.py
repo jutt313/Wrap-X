@@ -19,6 +19,17 @@ from app.config import settings
 from app.models.prompt_config import PromptConfig
 from app.models.wrapped_api import WrappedAPI
 from app.services.smart_config_prompt import build_smart_config_prompt
+from app.services.templates import (
+    use_thinking,
+    emit_thinking_content,
+    emit_thinking_completed,
+    get_fallback_thinking_content,
+    use_web_search,
+    get_web_search_tool_definition,
+    use_reasoning,
+    emit_reasoning_content,
+    emit_reasoning_completed
+)
 
 logger = logging.getLogger(__name__)
 
@@ -277,24 +288,10 @@ Ask ONE question at a time. When user confirms, return ALL fields.
             logger.info(f"[Config Chat] User message mentions {'tools' if mentions_tools else 'search'} - enabling function calling")
             print(f"[Config Chat] User message mentions {'tools' if mentions_tools else 'search'} - enabling function calling")
 
-        # Define tools for config chat
+        # Define tools for config chat using templates
         config_chat_tools = [
-            # Web search for research
-            {
-                "type": "function",
-                "function": {
-                    "name": "web_search",
-                    "description": "🚨 MANDATORY: Search the web for current information, real-time data, best practices, API documentation, or any information you don't have. You MUST call this function when user asks for: current date/time, weather, latest information, 'search this', 'find this', 'serch online', or any real-time data. DO NOT just say 'I attempted to search' - ALWAYS call this function first.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "query": {"type": "string", "description": "The search query (e.g., 'current date time weather Fukui Japan', 'best practices for customer support AI 2025')"},
-                            "max_results": {"type": "integer", "minimum": 1, "maximum": 10, "default": 5}
-                        },
-                        "required": ["query"]
-                    }
-                }
-            },
+            # Web search for research (using template)
+            get_web_search_tool_definition(),
             # Tool generator for custom integrations
             {
                 "type": "function",
@@ -315,63 +312,12 @@ Ask ONE question at a time. When user confirms, return ALL fields.
         ]
 
         # Helper to execute web search using Google Custom Search API
-        def execute_web_search(query: str, max_results: int = 5) -> str:
-            google_cse_key = settings.google_cse_api_key
-            google_cse_id = settings.google_cse_id
-            
-            logger.info(f"🔍 [CONFIG CHAT] WEB SEARCH INITIATED")
-            logger.info(f"  Query: '{query}'")
-            logger.info(f"  Max Results: {max_results}")
-            logger.info(f"  GOOGLE_CSE_API_KEY available: {bool(google_cse_key)}")
-            logger.info(f"  GOOGLE_CSE_ID available: {bool(google_cse_id)}")
-            print(f"🔍 [CONFIG CHAT] WEB SEARCH INITIATED - Query: '{query}'")
-            
-            # Check if Google CSE is configured
-            if not google_cse_key or not google_cse_id:
-                error_msg = "Google Custom Search API not configured. Please set GOOGLE_CSE_API_KEY and GOOGLE_CSE_ID environment variables."
-                logger.error(f"❌ [CONFIG CHAT] {error_msg}")
-                print(f"❌ [CONFIG CHAT] {error_msg}")
-                return error_msg
-            
-            try:
-                logger.info(f"🔍 [CONFIG CHAT] Using Google Custom Search API")
-                print(f"🔍 [CONFIG CHAT] Using Google Custom Search API")
-                
-                url = f"https://www.googleapis.com/customsearch/v1?key={google_cse_key}&cx={google_cse_id}&q={urllib.parse.quote(query)}&num={min(max_results, 10)}"
-                
-                req = urllib.request.Request(
-                    url=url,
-                    headers={"User-Agent": "Wrap-X/1.0"},
-                    method="GET",
-                )
-                
-                logger.info(f"🔍 [CONFIG CHAT] Sending Google CSE request")
-                print(f"🔍 [CONFIG CHAT] Sending Google CSE request")
-                
-                with urllib.request.urlopen(req, timeout=15) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
-                
-                logger.info(f"✅ [CONFIG CHAT] Google CSE response received")
-                print(f"✅ [CONFIG CHAT] Google CSE response received")
-                
-                results = data.get("items", [])[:max_results]
-                logger.info(f"🔍 [CONFIG CHAT] Found {len(results)} results")
-                print(f"🔍 [CONFIG CHAT] Found {len(results)} results")
-                
-                lines = [
-                    f"- {r.get('title')}: {r.get('snippet')} (source: {r.get('link')})"
-                    for r in results
-                ]
-                
-                result_text = "Search results:\n" + "\n".join(lines) if lines else "No results found."
-                logger.info(f"✅ [CONFIG CHAT] Google CSE search completed - Found {len(lines)} results")
-                print(f"✅ [CONFIG CHAT] Google CSE search completed - Found {len(lines)} results")
-                return result_text
-                
-            except (HTTPError, URLError, Exception) as e:
-                logger.error(f"❌ [CONFIG CHAT] Web search error: {e}")
-                print(f"❌ [CONFIG CHAT] Web search error: {e}")
-                return f"Web search failed: {e}"
+        # Web search function using template (cleaner, reusable)
+        # Note: We still need a wrapper function for the inner scope
+        def execute_web_search_wrapper(query: str, max_results: int = 5) -> str:
+            # Use the template and return just the result text
+            result_text, _, _ = use_web_search(query, max_results)
+            return result_text
 
         # Prepare API params - add tools for web search and tool generation
         api_params = {
@@ -392,12 +338,12 @@ Ask ONE question at a time. When user confirms, return ALL fields.
             logger.warning(f"[Config Chat] Failed to add tools: {tools_err}")
             # Continue without tools
 
-        # Emit thinking_started event (always enabled for config chat)
-        config_events.append({
-            "type": "thinking_started",
-            "focus": "Analyzing user request and determining configuration needs"
-        })
-        logger.info(f"[Config Chat] Thinking started")
+        # Emit thinking_started event using template (always enabled for config chat)
+        thinking_events = use_thinking(
+            focus="Analyzing user request and determining configuration needs",
+            enabled=True
+        )
+        config_events.extend(thinking_events)
         print(f"🤔 [CONFIG CHAT] THINKING_STARTED event emitted")
         print(f"🤔 [CONFIG CHAT] Total events so far: {len(config_events)}")
         
@@ -437,24 +383,15 @@ Ask ONE question at a time. When user confirms, return ALL fields.
         print(f"🤔 [CONFIG CHAT]   - Content stripped length: {len(first_response_content.strip()) if first_response_content else 0}")
         
         if first_response_content and first_response_content.strip():
-            config_events.append({
-                "type": "thinking_content",
-                "content": first_response_content.strip()
-            })
-            logger.info(f"[Config Chat] Thinking content extracted: {len(first_response_content)} chars")
+            config_events.append(emit_thinking_content(first_response_content.strip()))
             print(f"🤔 [CONFIG CHAT] THINKING_CONTENT event emitted: {len(first_response_content)} chars")
             print(f"🤔 [CONFIG CHAT] Content preview: {first_response_content[:100]}...")
         else:
-            # If no thinking content but we have tool calls, add a note that thinking is happening
-            # This ensures the UI shows thinking indicator even if model doesn't output text
+            # If no thinking content but we have tool calls, use fallback
             has_tool_calls = hasattr(choice.message, 'tool_calls') and choice.message.tool_calls
             print(f"🤔 [CONFIG CHAT] No thinking content found. Has tool calls: {has_tool_calls}")
             if has_tool_calls:
-                config_events.append({
-                    "type": "thinking_content",
-                    "content": "Analyzing request and preparing to use tools..."
-                })
-                logger.info(f"[Config Chat] No thinking text from model, added fallback thinking content")
+                config_events.append(emit_thinking_content(get_fallback_thinking_content()))
                 print(f"🤔 [CONFIG CHAT] FALLBACK THINKING_CONTENT event emitted (no text from model)")
         print(f"🤔 [CONFIG CHAT] Total events after thinking extraction: {len(config_events)}")
         
@@ -484,36 +421,20 @@ Ask ONE question at a time. When user confirms, return ALL fields.
                             query = args.get("query", "")
                             max_results = args.get("max_results", 5)
                             
-                            # Emit tool_call event for frontend
-                            tool_call_event = {
-                                "type": "tool_call",
-                                "name": "web_search",
-                                "args": args
-                            }
-                            config_events.append(tool_call_event)
-                            logger.info(f"🔍 [CONFIG CHAT] Executing web_search tool - Query: '{query}', Max Results: {max_results}")
+                            # Execute web search using template (returns result + events)
                             print(f"🔍 [CONFIG CHAT] ========== WEB SEARCH TOOL CALL ==========")
-                            print(f"🔍 [CONFIG CHAT] TOOL_CALL event emitted: {tool_call_event}")
                             print(f"🔍 [CONFIG CHAT] Query: '{query}', Max Results: {max_results}")
                             print(f"🔍 [CONFIG CHAT] Total events before search: {len(config_events)}")
                             
-                            search_result = execute_web_search(query, max_results)
+                            search_result, tool_call_event, tool_result_event = use_web_search(query, max_results)
                             
-                            # Calculate results count
-                            results_count = len(search_result.split("\n")) if search_result else 0
-                            
-                            # Emit tool_result event for frontend
-                            tool_result_event = {
-                                "type": "tool_result",
-                                "name": "web_search",
-                                "query": query,
-                                "results_count": results_count
-                            }
+                            # Add events from template
+                            config_events.append(tool_call_event)
                             config_events.append(tool_result_event)
-                            logger.info(f"✅ [CONFIG CHAT] Web search completed - Query: '{query}', Results: {len(search_result)} chars")
+                            
                             print(f"✅ [CONFIG CHAT] ========== WEB SEARCH COMPLETED ==========")
+                            print(f"✅ [CONFIG CHAT] TOOL_CALL event emitted: {tool_call_event}")
                             print(f"✅ [CONFIG CHAT] TOOL_RESULT event emitted: {tool_result_event}")
-                            print(f"✅ [CONFIG CHAT] Query: '{query}', Results: {results_count} lines, {len(search_result)} chars")
                             print(f"✅ [CONFIG CHAT] Total events after search: {len(config_events)}")
                         except Exception as search_err:
                             logger.error(f"Config chat search execution error: {search_err}")
@@ -598,12 +519,13 @@ Ask ONE question at a time. When user confirms, return ALL fields.
                         "name": tc.function.name,
                         "content": json.dumps({"error": f"Tool execution failed: {str(tool_exec_err)}"})
                     })
-            # Emit reasoning_started event (reasoning phase begins after tools)
-            config_events.append({
-                "type": "reasoning_started",
-                "focus": "Analyzing tool results and formulating final configuration"
-            })
-            logger.info(f"[Config Chat] Reasoning started")
+            # Emit reasoning_started event using template (reasoning phase begins after tools)
+            reasoning_started = use_reasoning(
+                focus="Analyzing tool results and formulating final configuration",
+                enabled=True
+            )
+            if reasoning_started:
+                config_events.append(reasoning_started)
             print(f"🔍 [CONFIG CHAT] ========== REASONING STARTED ==========")
             print(f"🔍 [CONFIG CHAT] REASONING_STARTED event emitted")
             print(f"🔍 [CONFIG CHAT] Total events before reasoning: {len(config_events)}")
@@ -635,28 +557,17 @@ Ask ONE question at a time. When user confirms, return ALL fields.
         print(f"🔍 [CONFIG CHAT]   - Result text: {result_text[:100] if result_text else 'None'}...")
         print(f"🔍 [CONFIG CHAT]   - Result text length: {len(result_text) if result_text else 0}")
         if result_text and result_text.strip():
-            # Check if this is reasoning content (before JSON parsing)
-            # If it contains structured thinking/reasoning, extract it
-            reasoning_content = result_text.strip()
-            config_events.append({
-                "type": "reasoning_content",
-                "content": reasoning_content[:500]  # Limit to first 500 chars for display
-            })
-            logger.info(f"[Config Chat] Reasoning content extracted: {len(reasoning_content)} chars")
-            print(f"🔍 [CONFIG CHAT] REASONING_CONTENT event emitted: {len(reasoning_content)} chars")
-            print(f"🔍 [CONFIG CHAT] Content preview: {reasoning_content[:100]}...")
+            # Extract reasoning content using template
+            config_events.append(emit_reasoning_content(result_text.strip(), max_length=500))
+            print(f"🔍 [CONFIG CHAT] REASONING_CONTENT event emitted: {len(result_text)} chars")
+            print(f"🔍 [CONFIG CHAT] Content preview: {result_text[:100]}...")
         else:
             print(f"🔍 [CONFIG CHAT] No reasoning content found in final response")
         print(f"🔍 [CONFIG CHAT] Total events before completion: {len(config_events)}")
         
-        # Emit reasoning_completed and thinking_completed events
-        config_events.append({
-            "type": "reasoning_completed"
-        })
-        config_events.append({
-            "type": "thinking_completed"
-        })
-        logger.info(f"[Config Chat] Thinking and reasoning completed")
+        # Emit reasoning_completed and thinking_completed events using templates
+        config_events.append(emit_reasoning_completed())
+        config_events.append(emit_thinking_completed())
         print(f"✅ [CONFIG CHAT] ========== REASONING COMPLETED ==========")
         print(f"✅ [CONFIG CHAT] REASONING_COMPLETED event emitted")
         print(f"✅ [CONFIG CHAT] THINKING_COMPLETED event emitted")
