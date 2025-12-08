@@ -8,7 +8,16 @@ import re
 from app.models.llm_provider import LLMProvider
 from app.services.model_catalog import get_available_models
 
+# Initialize logger first
 logger = logging.getLogger(__name__)
+
+# Optional: Import validation templates for enhanced tool code validation
+try:
+    from app.services.templates.custom_tools import validate_tool_code
+    VALIDATION_TEMPLATE_AVAILABLE = True
+except ImportError:
+    VALIDATION_TEMPLATE_AVAILABLE = False
+    logger.warning("Validation templates not available - tool code validation will be basic")
 
 
 # Allowed fields for config updates
@@ -43,6 +52,15 @@ ALLOWED_FIELDS = {
     "response_message",  # AI-generated response, not a config field but allowed
     "error",  # AI-generated error, not a config field but allowed
     "pending_tools",  # pending integration forms to render in UI
+    "tool_integration_data",  # tool integration discovery data for UI
+    "toolIntegrationData",  # camelCase variant for compatibility
+    "action_selection_data",  # action selection data for UI
+    "events",  # frontend events
+    "wx_events",  # legacy events name
+    "tool_integration_data",  # tool discovery/generation data for UI
+    "toolIntegrationData",  # camelCase variant for tool integration data
+    "events",  # UI events (thinking, reasoning, etc.)
+    "wx_events",  # wrapped API events
 }
 
 # Enum validations
@@ -281,15 +299,93 @@ def validate_config_updates(
                 cleaned[field] = value
         
         elif field == "pending_tools":
-            if isinstance(value, list):
-                cleaned[field] = value
-            else:
+            if not isinstance(value, list):
                 errors.append({
                     "field": field,
                     "value": value,
                     "message": "pending_tools must be a list",
                     "valid_type": "list"
                 })
+            else:
+                # Validate structure of each pending tool
+                validated_tools = []
+                for idx, tool in enumerate(value):
+                    if not isinstance(tool, dict):
+                        errors.append({
+                            "field": f"pending_tools[{idx}]",
+                            "value": tool,
+                            "message": "Each tool must be a dictionary",
+                            "valid_type": "dict"
+                        })
+                        continue
+                    
+                    # Required: tool_name or name
+                    tool_name = tool.get("tool_name") or tool.get("name")
+                    if not tool_name:
+                        errors.append({
+                            "field": f"pending_tools[{idx}]",
+                            "value": tool,
+                            "message": "Tool must have 'tool_name' or 'name' field",
+                            "required_fields": ["tool_name", "name"]
+                        })
+                        continue
+                    
+                    # Required: credential_fields must be a list if present
+                    cred_fields = tool.get("credential_fields") or tool.get("fields") or []
+                    if not isinstance(cred_fields, list):
+                        errors.append({
+                            "field": f"pending_tools[{idx}].credential_fields",
+                            "value": cred_fields,
+                            "message": "credential_fields must be a list",
+                            "valid_type": "list"
+                        })
+                        continue
+                    
+                    # OAuth validation
+                    if tool.get("requires_oauth"):
+                        oauth_provider = tool.get("oauth_provider")
+                        oauth_scopes = tool.get("oauth_scopes")
+                        
+                        if not oauth_provider:
+                            errors.append({
+                                "field": f"pending_tools[{idx}].oauth_provider",
+                                "value": oauth_provider,
+                                "message": "OAuth tools must have 'oauth_provider' field",
+                                "required_when": "requires_oauth is true"
+                            })
+                        
+                        if not isinstance(oauth_scopes, list):
+                            errors.append({
+                                "field": f"pending_tools[{idx}].oauth_scopes",
+                                "value": oauth_scopes,
+                                "message": "oauth_scopes must be a list",
+                                "valid_type": "list"
+                            })
+                    
+                    # Validate tool_code if present (basic checks)
+                    if "tool_code" in tool:
+                        code = tool.get("tool_code")
+                        if code and isinstance(code, str):
+                            # Basic security checks
+                            dangerous_patterns = [
+                                ("eval(", "eval() usage is not allowed for security"),
+                                ("exec(", "exec() usage is not allowed for security"),
+                                ("__import__", "dynamic imports not allowed for security"),
+                            ]
+                            for pattern, msg in dangerous_patterns:
+                                if pattern in code:
+                                    errors.append({
+                                        "field": f"pending_tools[{idx}].tool_code",
+                                        "value": f"{tool_name} code",
+                                        "message": msg,
+                                        "security_risk": True
+                                    })
+                    
+                    validated_tools.append(tool)
+                
+                # Only set cleaned value if no errors for this field
+                if not any(e.get("field", "").startswith("pending_tools") for e in errors):
+                    cleaned[field] = validated_tools
         
         # Validate string fields (role, instructions, rules, behavior, examples, thinking_focus, web_search_triggers, and extended fields)
         elif field in {"role", "instructions", "rules", "behavior", "examples", "thinking_focus", "web_search_triggers",
@@ -328,6 +424,22 @@ def validate_config_updates(
         # Allow response_message and error (AI-generated, not config fields)
         elif field in {"response_message", "error"}:
             cleaned[field] = value
+        
+        # Allow UI-related fields (tool_integration_data, events, etc.) - pass through as-is
+        elif field in {"tool_integration_data", "toolIntegrationData", "events", "wx_events"}:
+            cleaned[field] = value
+    
+    # Copy any remaining allowed fields that weren't handled above (pass-through for UI fields)
+    for field in ALLOWED_FIELDS:
+        if field not in cleaned and field in parsed and parsed[field] is not None:
+            # Skip fields that were already processed or are config fields
+            if field not in {"role", "instructions", "rules", "behavior", "tone", "examples", 
+                           "model", "temperature", "max_tokens", "top_p", "frequency_penalty",
+                           "thinking_mode", "thinking_focus", "web_search", "web_search_triggers",
+                           "tools", "pending_tools", "response_message", "error",
+                           "tool_integration_data", "toolIntegrationData", "events", "wx_events"}:
+                # This shouldn't happen, but just in case, pass through
+                cleaned[field] = parsed[field]
     
     if errors:
         raise ValidationError(errors)

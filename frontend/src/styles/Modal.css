@@ -1,8 +1,8 @@
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(2, 6, 23, 0.55);
-  backdrop-filter: blur(6px);
+  background: rgba(0, 0, 0, 0.85); /* Darker, no gray tint */
+  backdrop-filter: blur(2px); /* Reduced blur */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -13,10 +13,10 @@
 .modal-card {
   width: 1000px; /* fixed large width */
   height: 680px; /* fixed large height */
-  background: linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(17, 24, 39, 0.93));
-  border: 1px solid rgba(99, 102, 241, 0.28);
+  background: linear-gradient(180deg, rgba(2, 6, 23, 0.98), rgba(15, 23, 42, 0.98)); /* Darker */
+  border: 1px solid rgba(99, 102, 241, 0.4); /* Stronger purple border */
   border-radius: 16px; /* rounded corner */
-  box-shadow: 0 30px 80px rgba(0,0,0,0.55), 0 0 60px rgba(59,130,246,0.25); /* glow */
+  box-shadow: 0 30px 80px rgba(0,0,0,0.8), 0 0 60px rgba(99, 102, 241, 0.3); /* Darker shadow, purple glow */
   color: rgba(255,255,255,0.96);
   overflow: hidden;
 }

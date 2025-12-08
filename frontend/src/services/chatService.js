@@ -4,11 +4,12 @@ class ChatService {
   async sendConfigMessage(wrappedApiId, message) {
     try {
       // Apply changes so the backend persists config instead of only previewing
-      // If you prefer conditional apply, wire a UI flag and pass it here.
-      return await apiClient.post(`/api/wrapped-apis/${wrappedApiId}/chat/config`, {
+      const requestBody = {
         message,
         apply: true
-      });
+      };
+      
+      return await apiClient.post(`/api/wrapped-apis/${wrappedApiId}/chat/config`, requestBody);
     } catch (error) {
       // Gracefully surface server validation messages as normal responses
       const safeMessage = (error && error.message) ? String(error.message) : 'Validation failed. Please adjust and try again.';
@@ -58,6 +59,7 @@ class ChatService {
       throw error;
     }
   }
+
 }
 
 export const chatService = new ChatService();

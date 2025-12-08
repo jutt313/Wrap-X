@@ -5,8 +5,8 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(8px);
+  background: rgba(0, 0, 0, 0.85); /* Darker overlay */
+  backdrop-filter: blur(2px); /* Reduced blur */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -15,17 +15,17 @@
 }
 
 .tools-modal-card {
-  background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.95) 100%);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(135deg, rgba(2, 6, 23, 0.98) 0%, rgba(15, 23, 42, 0.98) 100%); /* Darker */
+  backdrop-filter: blur(8px) saturate(120%); /* Reduced blur */
+  -webkit-backdrop-filter: blur(8px) saturate(120%);
+  border: 1px solid rgba(99, 102, 241, 0.4); /* Purple border */
   border-radius: 24px;
   width: 600px;
   max-width: 90vw;
   max-height: 90vh;
   box-shadow: 
-    0 20px 60px rgba(0, 0, 0, 0.5),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    0 20px 60px rgba(0, 0, 0, 0.8),
+    inset 0 1px 0 rgba(99, 102, 241, 0.2); /* Purple inset */
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -118,15 +118,15 @@
   align-items: center;
   justify-content: space-between;
   padding: 1rem;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(15, 23, 42, 0.5); /* Darker background */
+  border: 1px solid rgba(99, 102, 241, 0.2); /* Purple border */
   border-radius: 12px;
   transition: all 0.2s ease;
 }
 
 .tool-item:hover {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(99, 102, 241, 0.3);
+  background: rgba(15, 23, 42, 0.7); /* Darker on hover */
+  border-color: rgba(99, 102, 241, 0.4); /* Stronger purple on hover */
 }
 
 .tool-info {
@@ -251,8 +251,8 @@
 .upload-3d-container {
   position: relative;
   height: 180px;
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(59, 130, 246, 0.05) 100%);
-  border: 2px solid rgba(99, 102, 241, 0.3);
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.6) 0%, rgba(2, 6, 23, 0.5) 100%); /* Darker background */
+  border: 2px solid rgba(99, 102, 241, 0.4); /* Stronger purple border */
   border-radius: 16px;
   cursor: pointer;
   transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -264,10 +264,10 @@
 }
 
 .upload-3d-container:hover {
-  border-color: rgba(99, 102, 241, 0.6);
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(59, 130, 246, 0.1) 100%);
+  border-color: rgba(99, 102, 241, 0.7); /* Stronger purple on hover */
+  background: linear-gradient(135deg, rgba(15, 23, 42, 0.8) 0%, rgba(2, 6, 23, 0.7) 100%); /* Darker on hover */
   transform: translateZ(20px) scale(1.02);
-  box-shadow: 0 20px 40px rgba(99, 102, 241, 0.2);
+  box-shadow: 0 20px 40px rgba(99, 102, 241, 0.3);
 }
 
 .upload-3d-container:active {
@@ -359,8 +359,8 @@
   align-items: center;
   justify-content: space-between;
   padding: 0.875rem 1rem;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(15, 23, 42, 0.5); /* Darker background */
+  border: 1px solid rgba(99, 102, 241, 0.2); /* Purple border */
   border-radius: 10px;
   transition: all 0.2s ease;
   animation: slideInDoc 0.3s ease-out;
@@ -378,8 +378,8 @@
 }
 
 .document-item:hover {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(99, 102, 241, 0.3);
+  background: rgba(15, 23, 42, 0.7); /* Darker on hover */
+  border-color: rgba(99, 102, 241, 0.4); /* Stronger purple on hover */
 }
 
 .document-info {
@@ -445,8 +445,8 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(8px);
+  background: rgba(0, 0, 0, 0.85); /* Darker overlay */
+  backdrop-filter: blur(2px); /* Reduced blur */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -481,18 +481,18 @@
 }
 
 .file-upload-dropzone {
-  border: 2px dashed rgba(255, 255, 255, 0.3);
+  border: 2px dashed rgba(99, 102, 241, 0.4); /* Purple border */
   border-radius: 12px;
   padding: 3rem 2rem;
   text-align: center;
   cursor: pointer;
   transition: all 0.3s ease;
-  background: rgba(255, 255, 255, 0.02);
+  background: rgba(15, 23, 42, 0.5); /* Darker background */
 }
 
 .file-upload-dropzone:hover {
-  border-color: rgba(99, 102, 241, 0.5);
-  background: rgba(99, 102, 241, 0.05);
+  border-color: rgba(99, 102, 241, 0.6); /* Stronger purple */
+  background: rgba(15, 23, 42, 0.7); /* Darker on hover */
 }
 
 .file-upload-dropzone svg {

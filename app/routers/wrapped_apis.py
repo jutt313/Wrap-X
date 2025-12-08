@@ -22,8 +22,6 @@ from app.models.tool import Tool
 from app.models.wrapped_api_tool import WrappedAPITool
 from app.models.api_log import APILog
 from app.models.uploaded_document import UploadedDocument
-from app.models.wrap_tool import WrapTool
-from app.models.wrap_credential import WrapCredential
 from app.models.oauth_app import OAuthApp
 from app.schemas.wrapped_api import (
     WrappedAPICreate,
@@ -40,9 +38,6 @@ from app.schemas.wrapped_api import (
     APIKeyListResponse,
     APIKeyListItem,
     ToolsUpdateRequest,
-    IntegrationResponse,
-    IntegrationCreate,
-    IntegrationField
 )
 from app.schemas.uploaded_document import UploadedDocumentCreate, UploadedDocumentResponse
 from app.auth.dependencies import get_current_active_user
@@ -562,6 +557,48 @@ async def delete_wrapped_api(
     return None
 
 
+@router.delete("/all", status_code=status.HTTP_200_OK)
+async def delete_all_wrapped_apis(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Delete all wrapped APIs for the current user"""
+    logger = logging.getLogger(__name__)
+    
+    try:
+        # Get all wraps for the user
+        result = await db.execute(
+            select(WrappedAPI).where(WrappedAPI.user_id == current_user.id)
+        )
+        wraps = result.scalars().all()
+        
+        count = len(wraps)
+        
+        if count == 0:
+            return {"message": "No wraps to delete", "deleted_count": 0}
+        
+        # Delete all wraps
+        for wrap in wraps:
+            await db.delete(wrap)
+        
+        await db.commit()
+        
+        logger.info(f"Deleted all wraps for user: user_id={current_user.id}, count={count}")
+        
+        return {
+            "message": f"Successfully deleted {count} wrap(s)",
+            "deleted_count": count
+        }
+        
+    except Exception as e:
+        logger.error(f"Error deleting all wraps: {e}")
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete wraps"
+        )
+
+
 @router.post("/{wrapped_api_id}/chat/config", response_model=ChatConfigResponse)
 async def send_config_chat_message(
     wrapped_api_id: int,
@@ -569,7 +606,7 @@ async def send_config_chat_message(
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Handle config chat message - parse and update config with production-ready validation and security"""
+    """Handle config chat message - route based on mode (wrap or integration)"""
     try:
         # Rate limiting check
         allowed, retry_after = check_rate_limit(current_user.id, wrapped_api_id, user_limit=10, wrap_limit=5)
@@ -734,43 +771,6 @@ async def send_config_chat_message(
             logger.warning(f"Failed to load documents: {e}")
             documents_info = []
 
-        # Load existing integrations so assistant knows what's already connected
-        existing_integrations = []
-        try:
-            tools_result = await db.execute(
-                select(WrapTool)
-                .where(WrapTool.wrap_id == wrapped_api_id)
-                .order_by(WrapTool.created_at.desc())
-            )
-            tools = tools_result.scalars().all()
-            for tool in tools:
-                # Check if it has credentials (is connected)
-                cred_result = await db.execute(
-                    select(WrapCredential).where(
-                        WrapCredential.wrap_id == wrapped_api_id,
-                        WrapCredential.tool_name == tool.tool_name
-                    )
-                )
-                credential = cred_result.scalar_one_or_none()
-                
-                integration_info = {
-                    "name": tool.tool_name,
-                    "display_name": tool.tool_name,
-                    "description": tool.description or "",
-                    "is_connected": credential is not None
-                }
-                
-                # Add OAuth info if available
-                if credential and credential.tool_metadata:
-                    oauth_meta = credential.tool_metadata.get("oauth")
-                    if oauth_meta:
-                        integration_info["oauth_provider"] = oauth_meta.get("provider")
-                        integration_info["oauth_scopes"] = oauth_meta.get("scopes", [])
-                
-                existing_integrations.append(integration_info)
-        except Exception as e:
-            logger.warning(f"Failed to load existing integrations: {e}")
-            existing_integrations = []
 
         # Get current config for parsing
         # Extract platform from instructions if it exists (format: "Platform: Zapier" or similar)
@@ -807,7 +807,6 @@ async def send_config_chat_message(
             # Test chat logs for analysis
             "test_chat_logs": test_chat_logs,
             # Existing integrations (so assistant knows what's already connected)
-            "existing_integrations": existing_integrations
         }
 
         # If available_models were not provided by the UI, try to fetch dynamically
@@ -820,7 +819,13 @@ async def send_config_chat_message(
         
         # Parse command
         logger.info(f"Parsing config chat message: user={current_user.id}, wrapped_api_id={wrapped_api_id}, message='{chat_request.message[:100]}...'")
-        parsed = await parse_chat_command(chat_request.message, current_config, history=history_msgs)
+        parsed = await parse_chat_command(
+            chat_request.message,
+            current_config,
+            history=history_msgs,
+            wrap_id=wrapped_api_id,
+            db_session=db
+        )
         try:
             logger.info("CFGCHAT parsed (truncated 1000): %s", json.dumps(parsed)[:1000])
         except Exception:
@@ -837,14 +842,11 @@ async def send_config_chat_message(
                 prov_obj = prov_res.scalar_one_or_none()
             
             # Validate with strict parsing (raises ValidationError on failure)
-            validated_parsed = validate_config_updates(
+            parsed = validate_config_updates(
                 parsed,
                 available_models=current_config.get("available_models"),
                 provider=prov_obj
             )
-            
-            # Use validated parsed data
-            parsed = validated_parsed
             
         except ValidationError as ve:
             # Structured validation error - surface actual issues
@@ -1274,15 +1276,18 @@ async def get_config_chat_messages(
     )
     messages = messages_result.scalars().all()
     
-    return [
-        {
+    # Build response
+    response_messages = []
+    for msg in messages:
+        msg_dict = {
             "id": msg.id,
             "message": msg.message,
             "response": msg.response,
             "created_at": msg.created_at.isoformat() if msg.created_at else None
         }
-        for msg in messages
-    ]
+        response_messages.append(msg_dict)
+    
+    return response_messages
 
 
 @router.get("/providers/{provider_id}/models", response_model=List[str])
@@ -1946,419 +1951,3 @@ async def delete_document(
     return {"message": "Document deleted successfully"}
 
 
-@router.get("/{wrapped_api_id}/integrations", response_model=List[IntegrationResponse])
-async def list_integrations(
-    wrapped_api_id: int,
-    current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db)
-):
-    """List all integrations (tools with credentials) for a wrapped API"""
-    # Verify wrapped API exists and belongs to user
-    result = await db.execute(
-        select(WrappedAPI).where(
-            WrappedAPI.id == wrapped_api_id,
-            WrappedAPI.user_id == current_user.id
-        )
-    )
-    wrapped_api = result.scalar_one_or_none()
-    
-    if not wrapped_api:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Wrapped API not found or not owned by user"
-        )
-    
-    # Get all tools for this wrap
-    tools_result = await db.execute(
-        select(WrapTool)
-        .where(WrapTool.wrap_id == wrapped_api_id)
-        .order_by(WrapTool.created_at.desc())
-    )
-    tools = tools_result.scalars().all()
-    
-    integrations = []
-    for tool in tools:
-        # Get credential if exists
-        cred_result = await db.execute(
-            select(WrapCredential).where(
-                WrapCredential.wrap_id == wrapped_api_id,
-                WrapCredential.tool_name == tool.tool_name
-            )
-        )
-        credential = cred_result.scalar_one_or_none()
-        
-        # Extract field definitions from tool_metadata or use defaults
-        field_definitions = []
-        if credential and credential.tool_metadata:
-            field_definitions = credential.tool_metadata.get("field_definitions", [])
-        
-        # If no field definitions, create basic ones from tool name
-        if not field_definitions:
-            field_definitions = [{
-                "name": "api_key",
-                "label": "API Key",
-                "type": "password",
-                "required": True
-            }]
-        
-        oauth_meta = credential.tool_metadata.get("oauth") if credential and credential.tool_metadata else None
-
-        integrations.append(IntegrationResponse(
-            name=tool.tool_name,
-            display_name=tool.tool_name,  # Could be enhanced with display_name field
-            description=tool.description,
-            is_connected=credential is not None,
-            fields=[IntegrationField(**field) for field in field_definitions],
-            created_at=tool.created_at,
-            updated_at=credential.updated_at if credential else tool.updated_at,
-            requires_oauth=bool(oauth_meta.get("requires_oauth") if oauth_meta else False),
-            oauth_provider=oauth_meta.get("provider") if oauth_meta else None,
-            oauth_scopes=oauth_meta.get("scopes") if oauth_meta else None,
-        ))
-    
-    return integrations
-
-
-@router.post("/{wrapped_api_id}/integrations", response_model=IntegrationResponse)
-async def save_integration(
-    wrapped_api_id: int,
-    integration_data: IntegrationCreate,
-    current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db)
-):
-    """Save credentials for an integration (tool)"""
-    # Verify wrapped API exists and belongs to user
-    result = await db.execute(
-        select(WrappedAPI).where(
-            WrappedAPI.id == wrapped_api_id,
-            WrappedAPI.user_id == current_user.id
-        )
-    )
-    wrapped_api = result.scalar_one_or_none()
-    
-    if not wrapped_api:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Wrapped API not found or not owned by user"
-        )
-    
-    # Check if tool exists, create if not
-    tool_result = await db.execute(
-        select(WrapTool).where(
-            WrapTool.wrap_id == wrapped_api_id,
-            WrapTool.tool_name == integration_data.tool_name
-        )
-    )
-    tool = tool_result.scalar_one_or_none()
-    
-    if not tool:
-        # Create new tool
-        tool = WrapTool(
-            wrap_id=wrapped_api_id,
-            tool_name=integration_data.tool_name,
-            tool_code=integration_data.tool_code,
-            description=integration_data.description,
-            is_active=True
-        )
-        db.add(tool)
-        await db.flush()
-    
-    # Encrypt credentials
-    credentials_payload = integration_data.credentials or {}
-    credentials_json = json.dumps(credentials_payload)
-    encrypted_credentials = encrypt_api_key(credentials_json)
-    
-    # Store field definitions in metadata
-    tool_metadata = {
-        "field_definitions": [field.dict() for field in integration_data.credential_fields]
-    }
-
-    oauth_metadata = None
-    if integration_data.requires_oauth and integration_data.oauth_provider:
-        provider = integration_data.oauth_provider.lower()
-        oauth_metadata = {
-            "requires_oauth": True,
-            "provider": provider,
-            "scopes": integration_data.oauth_scopes or [],
-        }
-        oauth_app = await _get_or_create_oauth_app(db, wrapped_api_id, provider)
-        scope_set = set(oauth_app.scopes or [])
-        scope_set.update(oauth_metadata["scopes"])
-        oauth_app.scopes = sorted(scope_set)
-        if credentials_payload.get("client_id"):
-            oauth_app.client_id = credentials_payload["client_id"]
-        if credentials_payload.get("client_secret"):
-            oauth_app.client_secret_encrypted = encrypt_secret(credentials_payload["client_secret"])
-        if credentials_payload.get("refresh_token"):
-            oauth_app.refresh_token_encrypted = encrypt_secret(credentials_payload["refresh_token"])
-        if credentials_payload.get("access_token"):
-            oauth_app.access_token_encrypted = encrypt_secret(credentials_payload["access_token"])
-        if not oauth_app.redirect_url:
-            oauth_app.redirect_url = generate_redirect_url(wrapped_api_id, provider)
-        oauth_app.updated_at = datetime.now(timezone.utc)
-        tool_metadata["oauth"] = oauth_metadata
-    
-    # Check if credential exists, update or create
-    cred_result = await db.execute(
-        select(WrapCredential).where(
-            WrapCredential.wrap_id == wrapped_api_id,
-            WrapCredential.tool_name == integration_data.tool_name
-        )
-    )
-    credential = cred_result.scalar_one_or_none()
-    
-    if credential:
-        # Update existing
-        credential.credentials_json = encrypted_credentials
-        credential.tool_metadata = tool_metadata
-        credential.updated_at = datetime.now(timezone.utc)
-    else:
-        # Create new
-        credential = WrapCredential(
-            wrap_id=wrapped_api_id,
-            tool_id=tool.id,
-            tool_name=integration_data.tool_name,
-            credentials_json=encrypted_credentials,
-            tool_metadata=tool_metadata
-        )
-        db.add(credential)
-    
-    await db.commit()
-    await db.refresh(credential)
-    await db.refresh(tool)
-    
-    return IntegrationResponse(
-        name=tool.tool_name,
-        display_name=integration_data.display_name,
-        description=integration_data.description,
-        is_connected=True,
-        fields=integration_data.credential_fields,
-        created_at=tool.created_at,
-        updated_at=credential.updated_at,
-        requires_oauth=bool(oauth_metadata),
-        oauth_provider=oauth_metadata.get("provider") if oauth_metadata else None,
-        oauth_scopes=oauth_metadata.get("scopes") if oauth_metadata else None,
-    )
-
-
-@router.post("/{wrapped_api_id}/integrations/{tool_name}/test")
-async def test_integration(
-    wrapped_api_id: int,
-    tool_name: str,
-    test_data: dict,
-    current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db)
-):
-    """Test integration credentials without saving them"""
-    # Verify wrapped API exists and belongs to user
-    result = await db.execute(
-        select(WrappedAPI).where(
-            WrappedAPI.id == wrapped_api_id,
-            WrappedAPI.user_id == current_user.id
-        )
-    )
-    wrapped_api = result.scalar_one_or_none()
-    
-    if not wrapped_api:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Wrapped API not found or not owned by user"
-        )
-    
-    # Get credentials from request or from database
-    credentials = test_data.get('credentials', {})
-    
-    # If no credentials provided, try to load from database
-    if not credentials:
-        cred_result = await db.execute(
-            select(WrapCredential).where(
-                WrapCredential.wrap_id == wrapped_api_id,
-                WrapCredential.tool_name == tool_name
-            )
-        )
-        credential = cred_result.scalar_one_or_none()
-        
-        if credential:
-            try:
-                credentials_json = decrypt_api_key(credential.credentials_json)
-                credentials = json.loads(credentials_json)
-            except Exception as e:
-                logger.error(f"Failed to decrypt credentials: {e}")
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Failed to decrypt stored credentials"
-                )
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="No credentials provided and none found in database"
-            )
-    
-    # Get tool code if available
-    tool_code = test_data.get('tool_code')
-    if not tool_code:
-        tool_result = await db.execute(
-            select(WrapTool).where(
-                WrapTool.wrap_id == wrapped_api_id,
-                WrapTool.tool_name == tool_name
-            )
-        )
-        tool = tool_result.scalar_one_or_none()
-        if tool:
-            tool_code = tool.tool_code
-    
-    # Test credentials
-    try:
-        success, message = await test_integration_credentials(
-            tool_name=tool_name,
-            credentials=credentials,
-            tool_code=tool_code
-        )
-        
-        return {
-            "success": success,
-            "message": message,
-            "tool_name": tool_name
-        }
-        
-    except Exception as e:
-        logger.error(f"Error testing integration {tool_name}: {e}")
-        return {
-            "success": False,
-            "message": f"Test failed: {str(e)[:200]}",
-            "tool_name": tool_name
-        }
-
-
-@router.delete("/{wrapped_api_id}/integrations/{tool_name}")
-async def delete_integration(
-    wrapped_api_id: int,
-    tool_name: str,
-    current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db)
-):
-    """Delete an integration (tool + credentials)"""
-    # Verify wrapped API exists and belongs to user
-    result = await db.execute(
-        select(WrappedAPI).where(
-            WrappedAPI.id == wrapped_api_id,
-            WrappedAPI.user_id == current_user.id
-        )
-    )
-    wrapped_api = result.scalar_one_or_none()
-    
-    if not wrapped_api:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Wrapped API not found or not owned by user"
-        )
-    
-    # Delete credential first
-    cred_result = await db.execute(
-        select(WrapCredential).where(
-            WrapCredential.wrap_id == wrapped_api_id,
-            WrapCredential.tool_name == tool_name
-        )
-    )
-    credential = cred_result.scalar_one_or_none()
-    if credential:
-        await db.delete(credential)
-    
-    # Delete tool
-    tool_result = await db.execute(
-        select(WrapTool).where(
-            WrapTool.wrap_id == wrapped_api_id,
-            WrapTool.tool_name == tool_name
-        )
-    )
-    tool = tool_result.scalar_one_or_none()
-    if tool:
-        await db.delete(tool)
-    
-    await db.commit()
-    
-    return {"message": f"Integration '{tool_name}' deleted successfully"}
-
-
-@router.patch("/{wrapped_api_id}/integrations/{tool_name}")
-async def update_integration(
-    wrapped_api_id: int,
-    tool_name: str,
-    update_data: dict,
-    current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db)
-):
-    """Update integration metadata (description, is_active, etc.)"""
-    # Verify wrapped API exists and belongs to user
-    result = await db.execute(
-        select(WrappedAPI).where(
-            WrappedAPI.id == wrapped_api_id,
-            WrappedAPI.user_id == current_user.id
-        )
-    )
-    wrapped_api = result.scalar_one_or_none()
-    
-    if not wrapped_api:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Wrapped API not found or not owned by user"
-        )
-    
-    # Get tool
-    tool_result = await db.execute(
-        select(WrapTool).where(
-            WrapTool.wrap_id == wrapped_api_id,
-            WrapTool.tool_name == tool_name
-        )
-    )
-    tool = tool_result.scalar_one_or_none()
-    
-    if not tool:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Integration not found"
-        )
-    
-    # Update allowed fields
-    if 'description' in update_data:
-        tool.description = update_data['description']
-    
-    if 'is_active' in update_data:
-        tool.is_active = update_data['is_active']
-    
-    if 'tool_code' in update_data:
-        tool.tool_code = update_data['tool_code']
-    
-    tool.updated_at = datetime.now(timezone.utc)
-    
-    # Update credentials if provided
-    if 'credentials' in update_data:
-        credentials_json = json.dumps(update_data['credentials'])
-        encrypted_credentials = encrypt_api_key(credentials_json)
-        
-        cred_result = await db.execute(
-            select(WrapCredential).where(
-                WrapCredential.wrap_id == wrapped_api_id,
-                WrapCredential.tool_name == tool_name
-            )
-        )
-        credential = cred_result.scalar_one_or_none()
-        
-        if credential:
-            credential.credentials_json = encrypted_credentials
-            credential.updated_at = datetime.now(timezone.utc)
-        else:
-            # Create new credential if it doesn't exist
-            credential = WrapCredential(
-                wrap_id=wrapped_api_id,
-                tool_id=tool.id,
-                tool_name=tool_name,
-                credentials_json=encrypted_credentials,
-                tool_metadata={}
-            )
-            db.add(credential)
-    
-    await db.commit()
-    await db.refresh(tool)
-    
-    return {"message": f"Integration '{tool_name}' updated successfully", "tool": tool}

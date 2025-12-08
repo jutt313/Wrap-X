@@ -87,7 +87,7 @@ function formatNumber(num) {
 }
 
 function ProfileDrawer({ isOpen, onClose, onLogout }) {
-  const { user, setUser } = useAuth();
+  const { user, setUser, logout } = useAuth();
   const [activeTab, setActiveTab] = useState('profile');
 
   // Profile tab state
@@ -146,6 +146,8 @@ function ProfileDrawer({ isOpen, onClose, onLogout }) {
   const [checkoutPlanId, setCheckoutPlanId] = useState(null);
   const [portalLoading, setPortalLoading] = useState(false);
   const [showTrialModal, setShowTrialModal] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
+  const [deletingAllWraps, setDeletingAllWraps] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -521,6 +523,72 @@ function ProfileDrawer({ isOpen, onClose, onLogout }) {
     }
   };
 
+  const handleDeleteAllWraps = async () => {
+    const confirmMessage = 'Are you sure you want to delete ALL your wraps? This action cannot be undone.';
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+
+    const doubleConfirm = window.prompt(
+      'This will permanently delete all your wraps. Type "DELETE ALL" to confirm:'
+    );
+
+    if (doubleConfirm !== 'DELETE ALL') {
+      return;
+    }
+
+    setDeletingAllWraps(true);
+    try {
+      const response = await wrappedApiService.deleteAllWraps();
+      alert(`Successfully deleted ${response.deleted_count || 0} wrap(s).`);
+      // Optionally reload projects or refresh the page
+      window.location.reload();
+    } catch (err) {
+      alert(err.response?.data?.detail || err.message || 'Failed to delete wraps');
+    } finally {
+      setDeletingAllWraps(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    const confirmMessage = 'Are you sure you want to delete your account? This will permanently delete:\n\n' +
+      '• All your wraps\n' +
+      '• All your projects\n' +
+      '• All your API keys\n' +
+      '• All your LLM providers\n' +
+      '• All your data\n\n' +
+      'This action CANNOT be undone.';
+    
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+
+    const doubleConfirm = window.prompt(
+      'This will permanently delete your account and all data. Type "DELETE ACCOUNT" to confirm:'
+    );
+
+    if (doubleConfirm !== 'DELETE ACCOUNT') {
+      return;
+    }
+
+    setDeletingAccount(true);
+    try {
+      await profileService.deleteAccount();
+      alert('Your account has been deleted. You will be logged out.');
+      // Logout and redirect
+      if (logout) {
+        logout();
+      } else if (onLogout) {
+        onLogout();
+      }
+      // Redirect to home/login
+      window.location.href = '/';
+    } catch (err) {
+      alert(err.response?.data?.detail || err.message || 'Failed to delete account');
+      setDeletingAccount(false);
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -773,6 +841,43 @@ function ProfileDrawer({ isOpen, onClose, onLogout }) {
                     </li>
                   ))}
                 </ul>
+              </div>
+
+              <div className="profile-danger-zone">
+                <h3>Danger Zone</h3>
+                <p className="danger-zone-description">
+                  Irreversible and destructive actions. Please proceed with caution.
+                </p>
+
+                <div className="danger-zone-actions">
+                  <div className="danger-action-item">
+                    <div className="danger-action-info">
+                      <h4>Delete All Wraps</h4>
+                      <p>Permanently delete all your wraps. This action cannot be undone.</p>
+                    </div>
+                    <button
+                      className="profile-btn danger"
+                      onClick={handleDeleteAllWraps}
+                      disabled={deletingAllWraps}
+                    >
+                      {deletingAllWraps ? 'Deleting...' : 'Delete All Wraps'}
+                    </button>
+                  </div>
+
+                  <div className="danger-action-item">
+                    <div className="danger-action-info">
+                      <h4>Delete Account</h4>
+                      <p>Permanently delete your account and all associated data. This action cannot be undone.</p>
+                    </div>
+                    <button
+                      className="profile-btn danger"
+                      onClick={handleDeleteAccount}
+                      disabled={deletingAccount}
+                    >
+                      {deletingAccount ? 'Deleting...' : 'Delete Account'}
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           )}

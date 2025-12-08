@@ -49,6 +49,4 @@ class WrappedAPI(Base):
     feedbacks = relationship("Feedback", back_populates="wrapped_api", cascade="all, delete-orphan")
     config_versions = relationship("ConfigVersion", back_populates="wrapped_api", cascade="all, delete-orphan")
     uploaded_documents = relationship("UploadedDocument", back_populates="wrapped_api", cascade="all, delete-orphan")
-    wrap_tools = relationship("WrapTool", back_populates="wrapped_api", cascade="all, delete-orphan")
-    wrap_credentials = relationship("WrapCredential", back_populates="wrapped_api", cascade="all, delete-orphan")
     oauth_apps = relationship("OAuthApp", back_populates="wrapped_api", cascade="all, delete-orphan")

@@ -920,6 +920,84 @@
   font-weight: 600;
 }
 
+/* Danger Zone Styles */
+.profile-danger-zone {
+  margin-top: 48px;
+  padding-top: 32px;
+  border-top: 2px solid rgba(239, 68, 68, 0.2);
+}
+
+.profile-danger-zone h3 {
+  color: #ef4444;
+  margin: 0 0 8px 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.danger-zone-description {
+  color: rgba(208, 219, 245, 0.65);
+  margin: 0 0 24px 0;
+  font-size: 0.9rem;
+}
+
+.danger-zone-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.danger-action-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: 12px;
+  gap: 24px;
+}
+
+.danger-action-info {
+  flex: 1;
+}
+
+.danger-action-info h4 {
+  margin: 0 0 6px 0;
+  color: #ef4444;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.danger-action-info p {
+  margin: 0;
+  color: rgba(208, 219, 245, 0.7);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.profile-btn.danger {
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  color: #fff;
+  border: 0;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.profile-btn.danger:hover:not(:disabled) {
+  background: linear-gradient(135deg, #dc2626, #b91c1c);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+}
+
+.profile-btn.danger:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 @media (max-width: 600px) {
   .profile-drawer {
     width: calc(100vw - 32px);
@@ -942,6 +1020,16 @@
 
   .panel-header-actions input,
   .panel-header-actions button {
+    width: 100%;
+  }
+
+  .danger-action-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+  }
+
+  .profile-btn.danger {
     width: 100%;
   }
 }

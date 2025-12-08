@@ -96,6 +96,15 @@ class WrappedAPIService {
       throw error;
     }
   }
+
+  async deleteAllWraps() {
+    try {
+      return await apiClient.delete('/api/wrapped-apis/all');
+    } catch (error) {
+      console.error('Error deleting all wraps:', error);
+      throw error;
+    }
+  }
 }
 
 export const wrappedApiService = new WrappedAPIService();

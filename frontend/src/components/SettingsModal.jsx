@@ -3,9 +3,7 @@ import { wrappedApiService } from '../services/wrappedApiService';
 import { apiClient } from '../api/client';
 import { documentService } from '../services/documentService';
 import FileUploadModal from './FileUploadModal';
-import ToolCredentialPopup from './ToolCredentialPopup';
 import '../styles/SettingsModal.css';
-import '../styles/ToolCredential.css';
 
 function SettingsModal({ wrappedApiId, isOpen, onClose }) {
   const [wrappedAPI, setWrappedAPI] = useState(null);
@@ -25,87 +23,15 @@ function SettingsModal({ wrappedApiId, isOpen, onClose }) {
   const [showWebSearch, setShowWebSearch] = useState(true);
   const [autoScroll, setAutoScroll] = useState(true);
   
-  // Integrations State
-  const [integrations, setIntegrations] = useState([]);
-  const [pendingIntegrations, setPendingIntegrations] = useState([]);
-  const [loadingIntegrations, setLoadingIntegrations] = useState(false);
-  const [selectedIntegration, setSelectedIntegration] = useState(null);
-  const [showIntegrationPopup, setShowIntegrationPopup] = useState(false);
-  const [savingIntegration, setSavingIntegration] = useState(false);
-  const TOOL_STORAGE_PREFIX = 'wx_tool_state';
 
-  const getPendingStorageKey = useCallback(() => {
-    if (!wrappedApiId) return null;
-    return `${TOOL_STORAGE_PREFIX}:${wrappedApiId}:pending`;
-  }, [wrappedApiId]);
-
-  const readPendingFromStorage = useCallback(() => {
-    if (typeof window === 'undefined') return [];
-    const key = getPendingStorageKey();
-    if (!key) return [];
-    try {
-      const raw = window.localStorage.getItem(key);
-      if (!raw) return [];
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch (err) {
-      console.warn('Failed to parse pending integrations from storage', err);
-      return [];
-    }
-  }, [getPendingStorageKey]);
-
-  const updatePendingState = useCallback(() => {
-    setPendingIntegrations(readPendingFromStorage());
-  }, [readPendingFromStorage]);
-
-  const removePendingIntegration = useCallback((integrationName) => {
-    if (typeof window === 'undefined') return;
-    const key = getPendingStorageKey();
-    if (!key) return;
-    try {
-      const raw = window.localStorage.getItem(key);
-      if (!raw) return;
-      const parsed = JSON.parse(raw);
-      if (!Array.isArray(parsed)) return;
-      const next = parsed.filter((tool) => tool?.name !== integrationName);
-      if (next.length === 0) {
-        window.localStorage.removeItem(key);
-      } else {
-        window.localStorage.setItem(key, JSON.stringify(next));
-      }
-      window.dispatchEvent(new CustomEvent('wxToolsUpdated', {
-        detail: { wrappedApiId, type: 'pending' }
-      }));
-      setPendingIntegrations(next);
-    } catch (err) {
-      console.error('Failed to remove pending integration', err);
-    }
-  }, [getPendingStorageKey, wrappedApiId]);
 
   useEffect(() => {
     if (isOpen && wrappedApiId) {
       loadData();
       loadDocuments();
       loadTestChatConfig();
-      loadIntegrations();
     }
   }, [isOpen, wrappedApiId]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    updatePendingState();
-    loadIntegrations(); // Reload from backend when modal opens
-    if (typeof window === 'undefined') return;
-    const handler = (event) => {
-      const eventWrapId = event?.detail?.wrappedApiId;
-      if (eventWrapId && eventWrapId !== wrappedApiId) return;
-      // Reload integrations when tools are updated
-      loadIntegrations();
-      updatePendingState();
-    };
-    window.addEventListener('wxToolsUpdated', handler);
-    return () => window.removeEventListener('wxToolsUpdated', handler);
-  }, [isOpen, wrappedApiId, updatePendingState]);
 
   const loadData = async () => {
     try {
@@ -167,75 +93,6 @@ function SettingsModal({ wrappedApiId, isOpen, onClose }) {
     }
   };
 
-  const loadIntegrations = async () => {
-    try {
-      setLoadingIntegrations(true);
-      const data = await apiClient.get(`/api/wrapped-apis/${wrappedApiId}/integrations`);
-      // Transform backend response to match frontend format
-      const transformed = data.map(integration => ({
-        name: integration.name,
-        displayName: integration.display_name,
-        description: integration.description,
-        isConnected: integration.is_connected,
-        fields: integration.fields,
-        credentials: {}, // Credentials are not returned for security
-        updatedAt: integration.updated_at,
-        requiresOAuth: integration.requires_oauth,
-        oauthProvider: integration.oauth_provider,
-        oauthScopes: integration.oauth_scopes || [],
-      }));
-      setIntegrations(transformed);
-      updatePendingState();
-    } catch (err) {
-      console.error('Error loading integrations:', err);
-      // Fallback to empty array on error
-      setIntegrations([]);
-    } finally {
-      setLoadingIntegrations(false);
-    }
-  };
-
-  const handleSaveIntegration = async (credentials) => {
-    if (!selectedIntegration) return;
-    setSavingIntegration(true);
-    try {
-      await apiClient.post(`/api/wrapped-apis/${wrappedApiId}/integrations`, {
-        tool_name: selectedIntegration.name,
-        display_name: selectedIntegration.displayName || selectedIntegration.name,
-        description: selectedIntegration.description || '',
-        credential_fields: selectedIntegration.fields || [],
-        credentials: credentials
-      });
-      removePendingIntegration(selectedIntegration.name);
-      updatePendingState();
-      
-      // Reload integrations from backend
-      await loadIntegrations();
-      
-      setShowIntegrationPopup(false);
-      setSelectedIntegration(null);
-    } catch (err) {
-      console.error('Error saving integration:', err);
-      alert('Failed to save integration. Please try again.');
-    } finally {
-      setSavingIntegration(false);
-    }
-  };
-
-  const handleDeleteIntegration = async (integrationName) => {
-    if (!confirm(`Are you sure you want to remove ${integrationName}?`)) return;
-    try {
-      await apiClient.delete(`/api/wrapped-apis/${wrappedApiId}/integrations/${integrationName}`);
-      // Reload integrations to reflect deletion
-      removePendingIntegration(integrationName);
-      updatePendingState();
-      await loadIntegrations();
-      alert(`${integrationName} removed successfully`);
-    } catch (err) {
-      console.error('Error deleting integration:', err);
-      alert('Failed to remove integration: ' + (err.message || 'Unknown error'));
-    }
-  };
 
   const loadTestChatConfig = () => {
     const savedConfig = localStorage.getItem(`testChatConfig_${wrappedApiId}`);
@@ -420,147 +277,6 @@ function SettingsModal({ wrappedApiId, isOpen, onClose }) {
                         </div>
                       ) : (
                         <div className="no-documents">No documents uploaded yet. Click above to add one.</div>
-                      )}
-                    </>
-                  )}
-                </div>
-
-                {/* Integrations Section */}
-                <div className="integrations-section">
-                  <div className="integrations-header">
-                    <span className="integrations-label">Connected Integrations</span>
-                  </div>
-                  
-                  {loadingIntegrations ? (
-                    <div className="settings-loading">Loading integrations...</div>
-                  ) : (
-                    <>
-                      {pendingIntegrations.length > 0 && (
-                        <div className="integrations-list pending-list">
-                          <div className="integrations-subheader">Pending Integrations</div>
-                          {pendingIntegrations.map((integration) => (
-                            <div key={`pending-${integration.name}`} className="integration-item pending">
-                              <div className="integration-info">
-                                <div className="integration-icon">
-                                  {integration.icon ? (
-                                    <img src={integration.icon} alt={integration.name} />
-                                  ) : (
-                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                      <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                                      <path d="M2 17L12 22L22 17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                                      <path d="M2 12L12 17L22 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                                    </svg>
-                                  )}
-                                </div>
-                                <div className="integration-details">
-                                  <span className="integration-name">{integration.displayName || integration.name}</span>
-                                  <div className="integration-meta">
-                                <span className="integration-status pending">
-                                      <span className="integration-status-dot"></span>
-                                  {integration.oauthProvider ? `OAuth: ${integration.oauthProvider}` : 'Pending credentials'}
-                                    </span>
-                                    <span className="integration-timestamp">Awaiting setup</span>
-                                  </div>
-                                </div>
-                              </div>
-                              <div className="integration-actions">
-                                <button
-                                  className="integration-btn edit"
-                                  onClick={() => {
-                                    setSelectedIntegration({
-                                      ...integration,
-                                      isConnected: false,
-                                      credentials: integration.credentials || {}
-                                    });
-                                    setShowIntegrationPopup(true);
-                                  }}
-                                >
-                                  Finish Setup
-                                </button>
-                                <button
-                                  className="integration-btn delete"
-                                  onClick={() => removePendingIntegration(integration.name)}
-                                >
-                                  Dismiss
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {integrations.length > 0 && (
-                        <div className="integrations-list">
-                          {integrations.map((integration) => (
-                            <div key={integration.name} className="integration-item">
-                              <div className="integration-info">
-                                <div className="integration-icon">
-                                  {integration.icon ? (
-                                    <img src={integration.icon} alt={integration.name} />
-                                  ) : (
-                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                      <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                                      <path d="M2 17L12 22L22 17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                                      <path d="M2 12L12 17L22 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                                    </svg>
-                                  )}
-                                </div>
-                                <div className="integration-details">
-                                  <span className="integration-name">{integration.displayName || integration.name}</span>
-                                  <div className="integration-meta">
-                                    <span className={`integration-status ${integration.isConnected ? 'connected' : 'disconnected'}`}>
-                                      <span className="integration-status-dot"></span>
-                                      {integration.isConnected ? 'Connected' : 'Not connected'}
-                                    </span>
-                                    {integration.updatedAt && (
-                                      <span className="integration-timestamp">
-                                        Updated {new Date(integration.updatedAt).toLocaleDateString()}
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-                              <div className="integration-actions">
-                                <button
-                                  className="integration-btn edit"
-                                  onClick={() => {
-                                    setSelectedIntegration(integration);
-                                    setShowIntegrationPopup(true);
-                                  }}
-                                >
-                                  {integration.isConnected ? 'View' : 'Connect'}
-                                </button>
-                                <button 
-                                  className="integration-btn edit"
-                                  onClick={() => {
-                                    setSelectedIntegration(integration);
-                                    setShowIntegrationPopup(true);
-                                  }}
-                                >
-                                  Edit
-                                </button>
-                                <button 
-                                  className="integration-btn delete"
-                                  onClick={() => handleDeleteIntegration(integration.name)}
-                                >
-                                  Remove
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {pendingIntegrations.length === 0 && integrations.length === 0 && (
-                        <div className="integrations-empty">
-                          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ marginBottom: '8px', opacity: 0.5 }}>
-                            <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                            <path d="M2 17L12 22L22 17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                            <path d="M2 12L12 17L22 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                          </svg>
-                          <p>No integrations connected yet</p>
-                          <p style={{ fontSize: '0.75rem', marginTop: '4px' }}>Use the config chat to add integrations</p>
-                        </div>
                       )}
                     </>
                   )}
@@ -762,26 +478,6 @@ function SettingsModal({ wrappedApiId, isOpen, onClose }) {
         />
       )}
 
-      {/* Integration Credential Popup */}
-      <ToolCredentialPopup
-        isOpen={showIntegrationPopup}
-        onClose={() => {
-          setShowIntegrationPopup(false);
-          setSelectedIntegration(null);
-        }}
-        onSave={handleSaveIntegration}
-        toolName={selectedIntegration?.displayName || selectedIntegration?.name || ''}
-        fields={selectedIntegration?.fields || []}
-        initialValues={selectedIntegration?.credentials || {}}
-        saving={savingIntegration}
-        isReadOnly={selectedIntegration?.isConnected}
-        wrappedApiId={wrappedApiId}
-        toolCode={selectedIntegration?.toolCode}
-        requiresOAuth={selectedIntegration?.requiresOAuth}
-        oauthProvider={selectedIntegration?.oauthProvider}
-        oauthScopes={selectedIntegration?.oauthScopes}
-        aggregatedScopes={selectedIntegration?.aggregatedScopes}
-      />
     </div>
   );
 }

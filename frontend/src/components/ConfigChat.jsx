@@ -1,9 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { chatService } from '../services/chatService';
-import ToolCredentialButton from './ToolCredentialButton';
-import ToolCredentialPopup from './ToolCredentialPopup';
 import '../styles/ConfigChat.css';
-import '../styles/ToolCredential.css';
 
 function ConfigChat({ wrappedApiId, onConfigUpdate }) {
   const [messages, setMessages] = useState([]);
@@ -21,157 +18,10 @@ function ConfigChat({ wrappedApiId, onConfigUpdate }) {
   const [filteredDocs, setFilteredDocs] = useState([]);
   const [mentionQuery, setMentionQuery] = useState('');
 
-  const TOOL_STORAGE_PREFIX = 'wx_tool_state';
-  const getStorageKey = (type, id = wrappedApiId) => `${TOOL_STORAGE_PREFIX}:${id}:${type}`;
-  const persistTools = useCallback((type, tools, id = wrappedApiId) => {
-    if (typeof window === 'undefined' || !id) return;
-    const key = getStorageKey(type, id);
-    try {
-      if (!tools || tools.length === 0) {
-        window.localStorage.removeItem(key);
-      } else {
-        window.localStorage.setItem(key, JSON.stringify(tools));
-      }
-      window.dispatchEvent(new CustomEvent('wxToolsUpdated', {
-        detail: { wrappedApiId: id, type }
-      }));
-    } catch (err) {
-      console.warn('Failed to persist tool state', err);
-    }
-  }, [wrappedApiId]);
 
-  // Tool credentials state
-  const [pendingTools, setPendingTools] = useState([]); // Tools waiting for credentials
-  const [connectedTools, setConnectedTools] = useState([]); // Tools with saved credentials
-  const [selectedTool, setSelectedTool] = useState(null); // Tool being configured
-  const [showCredentialPopup, setShowCredentialPopup] = useState(false);
-  const [savingCredential, setSavingCredential] = useState(false);
 
-  const normalizePendingTools = (tools) => {
-    if (!Array.isArray(tools)) return [];
-    const normalized = tools.map((tool, idx) => {
-      const safeName = tool?.name || tool?.tool_name || tool?.toolName || `integration_${idx + 1}`;
-      const displayName = tool?.display_name || tool?.displayName || safeName || 'Custom Integration';
-      const rawFields = Array.isArray(tool?.fields)
-        ? tool.fields
-        : (Array.isArray(tool?.credential_fields) ? tool.credential_fields : (Array.isArray(tool?.credentialFields) ? tool.credentialFields : []));
 
-      let normalizedFields = rawFields.map((field, fieldIdx) => ({
-        name: field?.name || field?.key || `field_${fieldIdx + 1}`,
-        label: field?.label || field?.name || field?.key || `Field ${fieldIdx + 1}`,
-        type: field?.type || 'text',
-        required: field?.required !== false,
-        placeholder: field?.placeholder || '',
-        helpText: field?.helpText || field?.description || '',
-        instructions: field?.instructions || '',
-        options: field?.options || [],
-      }));
 
-      // If OAuth is required, hide token fields that the model might have emitted
-      const requiresOAuth = tool?.requires_oauth === true || tool?.requiresOAuth === true;
-      if (requiresOAuth) {
-        normalizedFields = normalizedFields.filter((f) => {
-          const n = (f.name || '').toLowerCase();
-          return !(n === 'refresh_token' || n === 'access_token' || n === 'token' || n === 'bearer_token');
-        });
-      }
-
-      return {
-        name: safeName,
-        displayName,
-        description: tool?.description || '',
-        icon: tool?.icon || null,
-        toolCode: tool?.tool_code || tool?.toolCode || null,
-        fields: normalizedFields,
-        requiresOAuth,
-        oauthProvider: tool?.oauth_provider || tool?.oauthProvider || null,
-        oauthScopes: Array.isArray(tool?.oauth_scopes)
-          ? tool.oauth_scopes
-          : (Array.isArray(tool?.oauthScopes) ? tool.oauthScopes : []),
-        oauthInstructions: tool?.oauth_instructions || tool?.oauthInstructions || '',
-      };
-    });
-
-    // Group tools by OAuth provider and aggregate scopes
-    const providerScopes = normalized.reduce((acc, tool) => {
-      if (tool.requiresOAuth && tool.oauthProvider) {
-        const key = tool.oauthProvider.toLowerCase();
-        if (!acc[key]) acc[key] = new Set();
-        (tool.oauthScopes || []).forEach((scope) => {
-          if (scope) acc[key].add(scope);
-        });
-      }
-      return acc;
-    }, {});
-
-    // Add aggregated scopes to each tool
-    const toolsWithScopes = normalized.map((tool) => {
-      if (tool.requiresOAuth && tool.oauthProvider) {
-        const key = tool.oauthProvider.toLowerCase();
-        const aggregated = providerScopes[key] ? Array.from(providerScopes[key]) : [];
-        return { ...tool, aggregatedScopes: aggregated };
-      }
-      return tool;
-    });
-
-    // Group tools by provider for button rendering
-    const groupedByProvider = toolsWithScopes.reduce((acc, tool) => {
-      if (tool.requiresOAuth && tool.oauthProvider) {
-        const key = tool.oauthProvider.toLowerCase();
-        if (!acc[key]) {
-          acc[key] = {
-            provider: tool.oauthProvider,
-            displayName: tool.oauthProvider.charAt(0).toUpperCase() + tool.oauthProvider.slice(1),
-            tools: [],
-            aggregatedScopes: tool.aggregatedScopes || [],
-            requiresOAuth: true,
-            oauthProvider: tool.oauthProvider,
-            oauthInstructions: tool.oauthInstructions || ''
-          };
-        }
-        acc[key].tools.push(tool);
-        // Merge aggregated scopes from all tools in group
-        if (tool.aggregatedScopes && tool.aggregatedScopes.length > 0) {
-          tool.aggregatedScopes.forEach(scope => {
-            if (!acc[key].aggregatedScopes.includes(scope)) {
-              acc[key].aggregatedScopes.push(scope);
-            }
-          });
-        }
-      } else {
-        // Non-OAuth tools stay separate
-        acc[tool.name] = {
-          provider: null,
-          displayName: tool.displayName || tool.name,
-          tools: [tool],
-          requiresOAuth: false
-        };
-      }
-      return acc;
-    }, {});
-
-    // Return grouped structure for rendering
-    return Object.values(groupedByProvider).map(group => {
-      if (group.tools.length === 1 && !group.requiresOAuth) {
-        // Single non-OAuth tool - return as-is
-        return group.tools[0];
-      }
-      // OAuth provider group - return group object
-      return {
-        name: group.provider ? `${group.provider}_group` : group.tools[0].name,
-        displayName: group.displayName,
-        description: group.tools.map(t => t.displayName || t.name).join(', '),
-        tools: group.tools,
-        requiresOAuth: group.requiresOAuth,
-        oauthProvider: group.oauthProvider,
-        aggregatedScopes: group.aggregatedScopes || [],
-        oauthInstructions: group.oauthInstructions,
-        // Use first tool's fields (they should all be the same for OAuth)
-        fields: group.tools[0]?.fields || [],
-        toolCode: group.tools[0]?.toolCode || null
-      };
-    });
-  };
 
   useEffect(() => {
     loadMessages();
@@ -189,63 +39,8 @@ function ConfigChat({ wrappedApiId, onConfigUpdate }) {
     }
   };
 
-  // Load tools from backend and localStorage on mount
-  useEffect(() => {
-    if (!wrappedApiId) {
-      setPendingTools([]);
-      setConnectedTools([]);
-      return;
-    }
 
-    const loadTools = async () => {
-      try {
-        // Load pending tools from localStorage
-        if (typeof window !== 'undefined') {
-          try {
-            const savedPending = window.localStorage.getItem(getStorageKey('pending'));
-            if (savedPending) {
-              const parsed = JSON.parse(savedPending);
-              if (Array.isArray(parsed)) {
-                setPendingTools(parsed);
-              }
-            }
-          } catch (err) {
-            console.warn('Failed to load pending tools from localStorage', err);
-          }
-        }
 
-        // Load connected tools from backend
-        const { apiClient } = await import('../api/client');
-        const integrations = await apiClient.get(`/api/wrapped-apis/${wrappedApiId}/integrations`);
-        
-        if (Array.isArray(integrations)) {
-          const connected = integrations.map(integration => ({
-            name: integration.name || integration.tool_name,
-            displayName: integration.display_name || integration.name,
-            description: integration.description || '',
-            fields: integration.fields || integration.credential_fields || [],
-            credentials: {}, // Not returned for security
-            requiresOAuth: integration.requires_oauth || false,
-            oauthProvider: integration.oauth_provider,
-            oauthScopes: integration.oauth_scopes || [],
-            oauthInstructions: integration.oauth_instructions || '',
-            toolCode: integration.tool_code || null,
-            isConnected: true
-          }));
-          setConnectedTools(connected);
-        }
-      } catch (err) {
-        console.warn('Failed to load integrations from backend', err);
-        // Continue with localStorage data if backend fails
-      }
-    };
-
-    loadTools();
-  }, [wrappedApiId]);
-
-  useEffect(() => {
-    persistTools('pending', pendingTools);
-  }, [pendingTools, persistTools]);
 
   // Note: Scroll is handled manually when messages are added/updated
   // This useEffect was causing conflicts, so we handle scrolling explicitly in sendMessage and response completion
@@ -294,10 +89,11 @@ function ConfigChat({ wrappedApiId, onConfigUpdate }) {
     }
   };
 
-  const handleSend = async () => {
-    if (!inputValue.trim() || loading) return;
 
-    const userMessage = inputValue.trim();
+  const sendMessage = async (messageText) => {
+    const userMessage = messageText || inputValue.trim();
+    if (!userMessage || loading) return;
+
     setInputValue('');
     setLoading(true);
     setLiveStatuses({ thinking: false, webSearch: false });
@@ -335,25 +131,7 @@ function ConfigChat({ wrappedApiId, onConfigUpdate }) {
       console.log('📤 [ConfigChat] User message:', userMessage);
       const response = await chatService.sendConfigMessage(wrappedApiId, userMessage);
       console.log('📥 [ConfigChat] ========== RESPONSE RECEIVED FROM API ==========');
-      const pendingToolsPayload =
-        response?.parsed_updates?.pending_tools ??
-        response?.parsed_updates?.pendingTools ??
-        response?.pending_tools ??
-        response?.pendingTools ??
-        null;
-      if (Array.isArray(pendingToolsPayload)) {
-        const normalized = normalizePendingTools(pendingToolsPayload);
-        setPendingTools(normalized);
-        // Persist to localStorage immediately
-        if (typeof window !== 'undefined') {
-          try {
-            const key = getStorageKey('pending');
-            window.localStorage.setItem(key, JSON.stringify(normalized));
-          } catch (err) {
-            console.warn('Failed to save pending tools to localStorage', err);
-          }
-        }
-      }
+      console.log('📥 [ConfigChat] Full response:', JSON.stringify(response, null, 2));
       
       // Remove typing indicator and stream assistant response into the paired message
       const full = response.response || '';
@@ -374,6 +152,7 @@ function ConfigChat({ wrappedApiId, onConfigUpdate }) {
       console.log('📨 [ConfigChat] Events count:', events.length);
       console.log('📨 [ConfigChat] Events type:', typeof events);
       console.log('📨 [ConfigChat] Is array?', Array.isArray(events));
+      
       
       const statusMsgs = [];
       const state = { thinking: false, reasoning: false, webSearch: false };
@@ -551,6 +330,11 @@ function ConfigChat({ wrappedApiId, onConfigUpdate }) {
     }
   };
 
+  const handleSend = async () => {
+    if (!inputValue.trim() || loading) return;
+    await sendMessage(inputValue.trim());
+  };
+
   const handleKeyPress = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -595,9 +379,29 @@ function ConfigChat({ wrappedApiId, onConfigUpdate }) {
     }
   };
 
+  // Strip markdown syntax from text
+  const stripMarkdown = (text) => {
+    if (!text) return '';
+    let cleaned = text;
+    // Remove **bold** and __bold__
+    cleaned = cleaned.replace(/\*\*(.*?)\*\*/g, '$1');
+    cleaned = cleaned.replace(/__(.*?)__/g, '$1');
+    // Remove *italic* and _italic_
+    cleaned = cleaned.replace(/\*(.*?)\*/g, '$1');
+    cleaned = cleaned.replace(/_(.*?)_/g, '$1');
+    // Remove `code`
+    cleaned = cleaned.replace(/`(.*?)`/g, '$1');
+    // Remove # headers
+    cleaned = cleaned.replace(/^#+\s+/gm, '');
+    // Remove []() links but keep text
+    cleaned = cleaned.replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1');
+    return cleaned;
+  };
+
   // Render message with smart line breaks for readability
   const formatMessage = (text) => {
-    const t = text || '';
+    // Strip markdown first
+    const t = stripMarkdown(text || '');
     
     // First, split by existing newlines
     let paragraphs = t.split('\n').filter(p => p.trim());
@@ -775,81 +579,16 @@ function ConfigChat({ wrappedApiId, onConfigUpdate }) {
                       {msg.isStreaming && <span className="stream-caret" />}
                     </>
                   )}
-                </div>
-              </div>
-            )}
+          </div>
+        </div>
+      )}
           </div>
         ))}
         <div ref={messagesEndRef} />
       </div>
 
-      <div className="chat-input-wrapper">
-        {/* Tool buttons - show above input when tools are pending or connected */}
-        {(pendingTools.length > 0 || connectedTools.length > 0) && (
-          <div className="tool-buttons-container">
-            {pendingTools.map((toolOrGroup) => {
-              // Handle grouped tools (OAuth provider groups)
-              if (toolOrGroup.tools && Array.isArray(toolOrGroup.tools) && toolOrGroup.tools.length > 1) {
-                // This is a provider group - show provider name
-                return (
-                  <ToolCredentialButton
-                    key={toolOrGroup.name}
-                    toolName={toolOrGroup.displayName}
-                    isConnected={false}
-                    icon={toolOrGroup.icon}
-                    onClick={() => {
-                      setSelectedTool(toolOrGroup);
-                      setShowCredentialPopup(true);
-                    }}
-                  />
-                );
-              }
-              // Single tool (OAuth or non-OAuth)
-              return (
-                <ToolCredentialButton
-                  key={toolOrGroup.name}
-                  toolName={toolOrGroup.displayName || toolOrGroup.name}
-                  isConnected={false}
-                  icon={toolOrGroup.icon}
-                  onClick={() => {
-                    setSelectedTool(toolOrGroup);
-                    setShowCredentialPopup(true);
-                  }}
-                />
-              );
-            })}
-            {connectedTools.map((toolOrGroup) => {
-              // Handle grouped tools
-              if (toolOrGroup.tools && Array.isArray(toolOrGroup.tools) && toolOrGroup.tools.length > 1) {
-                return (
-                  <ToolCredentialButton
-                    key={toolOrGroup.name}
-                    toolName={toolOrGroup.displayName}
-                    isConnected={true}
-                    icon={toolOrGroup.icon}
-                    onClick={() => {
-                      setSelectedTool(toolOrGroup);
-                      setShowCredentialPopup(true);
-                    }}
-                  />
-                );
-              }
-              return (
-                <ToolCredentialButton
-                  key={toolOrGroup.name}
-                  toolName={toolOrGroup.displayName || toolOrGroup.name}
-                  isConnected={true}
-                  icon={toolOrGroup.icon}
-                  onClick={() => {
-                    setSelectedTool(toolOrGroup);
-                    setShowCredentialPopup(true);
-                  }}
-                />
-              );
-            })}
-          </div>
-        )}
 
+      <div className="chat-input-wrapper">
         <div className="chat-input-container">
           {/* Document mention dropdown - appears above input */}
           {showMentionDropdown && filteredDocs.length > 0 && (
@@ -870,6 +609,7 @@ function ConfigChat({ wrappedApiId, onConfigUpdate }) {
             </div>
           )}
 
+          {/* Message Textarea */}
           <textarea
             ref={textareaRef}
             className="chat-input"
@@ -878,8 +618,10 @@ function ConfigChat({ wrappedApiId, onConfigUpdate }) {
             onKeyDown={handleKeyPress}
             placeholder="Describe how you want your AI to behave... (Type @ to mention documents)"
             disabled={isProcessing}
-            rows={1}
+            rows={2}
           />
+
+          {/* Send Button */}
           <button
             className={`send-button ${isProcessing ? 'playing' : ''}`}
             onClick={handleSend}
@@ -896,119 +638,6 @@ function ConfigChat({ wrappedApiId, onConfigUpdate }) {
         </div>
       </div>
 
-      {/* Tool Credential Popup */}
-      <ToolCredentialPopup
-        isOpen={showCredentialPopup}
-        onClose={() => {
-          setShowCredentialPopup(false);
-          setSelectedTool(null);
-        }}
-        wrappedApiId={wrappedApiId}
-        toolCode={selectedTool?.toolCode || (selectedTool?.tools?.[0]?.toolCode)}
-        requiresOAuth={selectedTool?.requiresOAuth || false}
-        oauthProvider={selectedTool?.oauthProvider}
-        oauthScopes={selectedTool?.oauthScopes || (selectedTool?.tools?.[0]?.oauthScopes)}
-        aggregatedScopes={selectedTool?.aggregatedScopes || []}
-        oauthInstructions={selectedTool?.oauthInstructions || (selectedTool?.tools?.[0]?.oauthInstructions)}
-        onSave={async (credentials) => {
-          if (!selectedTool) return;
-          setSavingCredential(true);
-          try {
-            const { apiClient } = await import('../api/client');
-            
-            // Handle grouped tools (OAuth provider groups)
-            const toolsToSave = selectedTool.tools && Array.isArray(selectedTool.tools) && selectedTool.tools.length > 1
-              ? selectedTool.tools
-              : [selectedTool];
-            
-            // Save credentials for all tools in the group
-            for (const tool of toolsToSave) {
-              await apiClient.post(`/api/wrapped-apis/${wrappedApiId}/integrations`, {
-                tool_name: tool.name,
-                display_name: tool.displayName || tool.name,
-                description: tool.description || '',
-                credential_fields: tool.fields || selectedTool.fields || [],
-                credentials: credentials
-              });
-            }
-            
-            // Remove from pending (both state and localStorage)
-            setPendingTools(prev => {
-              const filtered = prev.filter(t => {
-                // Handle grouped tools
-                if (t.tools && Array.isArray(t.tools)) {
-                  return t.name !== selectedTool.name;
-                }
-                return t.name !== selectedTool.name;
-              });
-              
-              // Update localStorage
-              if (typeof window !== 'undefined') {
-                try {
-                  const key = getStorageKey('pending');
-                  if (filtered.length === 0) {
-                    window.localStorage.removeItem(key);
-                  } else {
-                    window.localStorage.setItem(key, JSON.stringify(filtered));
-                  }
-                } catch (err) {
-                  console.warn('Failed to update localStorage', err);
-                }
-              }
-              
-              return filtered;
-            });
-            
-            // Reload connected tools from backend to get latest state
-            try {
-              const { apiClient: reloadClient } = await import('../api/client');
-              const integrations = await reloadClient.get(`/api/wrapped-apis/${wrappedApiId}/integrations`);
-              if (Array.isArray(integrations)) {
-                const connected = integrations.map(integration => ({
-                  name: integration.name || integration.tool_name,
-                  displayName: integration.display_name || integration.name,
-                  description: integration.description || '',
-                  fields: integration.fields || integration.credential_fields || [],
-                  credentials: {},
-                  requiresOAuth: integration.requires_oauth || false,
-                  oauthProvider: integration.oauth_provider,
-                  oauthScopes: integration.oauth_scopes || [],
-                  oauthInstructions: integration.oauth_instructions || '',
-                  toolCode: integration.tool_code || null,
-                  isConnected: true
-                }));
-                setConnectedTools(connected);
-              }
-            } catch (err) {
-              console.warn('Failed to reload integrations', err);
-            }
-            
-            setShowCredentialPopup(false);
-            setSelectedTool(null);
-            
-            // Notify parent to refresh
-            if (onConfigUpdate) {
-              onConfigUpdate();
-            }
-            
-            // Dispatch event for SettingsModal to update
-            if (typeof window !== 'undefined') {
-              window.dispatchEvent(new CustomEvent('wxToolsUpdated', {
-                detail: { wrappedApiId, type: 'connected' }
-              }));
-            }
-          } catch (err) {
-            console.error('Error saving credentials:', err);
-            alert('Failed to save credentials. Please try again.');
-          } finally {
-            setSavingCredential(false);
-          }
-        }}
-        toolName={selectedTool?.displayName || selectedTool?.name || ''}
-        fields={selectedTool?.fields || selectedTool?.tools?.[0]?.fields || []}
-        initialValues={selectedTool?.credentials || {}}
-        saving={savingCredential}
-      />
     </div>
   );
 }

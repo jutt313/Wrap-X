@@ -576,3 +576,44 @@ async def resend_verification(
             detail="Failed to resend verification email"
         )
 
+
+@router.delete("/account", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_account(
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Delete user account and all associated data"""
+    logger = logging.getLogger(__name__)
+    
+    try:
+        # Send account deletion confirmation email before deletion
+        try:
+            email_service.send_template_email(
+                to_email=current_user.email,
+                template_name="account_deleted.html",
+                subject="Your Wrap-X Account Has Been Deleted",
+                context={
+                    "user_name": current_user.name or "User",
+                    "to_email": current_user.email
+                }
+            )
+        except Exception as e:
+            logger.error(f"Failed to send account deletion email: {e}")
+            # Continue with deletion even if email fails
+        
+        # Delete user (cascade will handle all related data)
+        await db.delete(current_user)
+        await db.commit()
+        
+        logger.info(f"Account deleted: user_id={current_user.id}, email={current_user.email}")
+        
+        return None
+        
+    except Exception as e:
+        logger.error(f"Account deletion error: {e}")
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete account"
+        )
+

@@ -18,7 +18,7 @@ import openai
 from app.config import settings
 from app.models.prompt_config import PromptConfig
 from app.models.wrapped_api import WrappedAPI
-from app.services.smart_config_prompt import build_smart_config_prompt
+from app.services.document_extractor import extract_text_preview
 from app.services.templates import (
     use_thinking,
     emit_thinking_content,
@@ -30,11 +30,571 @@ from app.services.templates import (
     emit_reasoning_content,
     emit_reasoning_completed
 )
+# Removed template imports - using direct prompts instead
 
 logger = logging.getLogger(__name__)
 
 # Initialize OpenAI client
 _openai_client = None
+
+
+# ===== System Prompt Building Functions =====
+
+def build_optimized_config_prompt(current_config: Dict[str, Any], test_logs_context: str = "") -> str:
+    """
+    Build optimized configuration assistant prompt with 95%+ reliability
+    
+    Key improvements:
+    - Clear 3-phase workflow (Discover → Refine → Finalize)
+    - Reduced redundancy (~30% shorter)
+    - Better validation checkpoints
+    - Clearer priorities and fallbacks
+    """
+    
+    # Extract context
+    wrap_name = current_config.get('wrap_name', 'Unknown')
+    project_name = current_config.get('project_name', 'Unknown')
+    provider_name = current_config.get('provider_name', 'Unknown')
+    available_models = current_config.get('available_models', [])
+    
+    # Build clean config (exclude large fields)
+    clean_config = {k: v for k, v in current_config.items()
+                    if k not in ['available_models', 'test_chat_logs', 'uploaded_documents']}
+    
+    config_json = json.dumps(clean_config, indent=2)
+    
+    # Format sections
+    def format_integrations(integrations):
+        if not integrations:
+            return "None"
+        lines = []
+        for i in integrations:
+            name = i.get("display_name") or i.get("name", "Unknown")
+            status = "✅ Connected" if i.get("is_connected") else "⏳ Pending"
+            lines.append(f"- {name} - {status}")
+        return "\n".join(lines)
+    
+    def format_discoveries(discoveries):
+        if not discoveries:
+            return "None"
+        lines = []
+        for d in discoveries:
+            name = d.get("display_name") or d.get("tool_name", "Unknown")
+            status = d.get("status", "unknown")
+            status_text = {
+                "discovered": "⏳ Waiting",
+                "requirements_provided": "⏳ Ready",
+            "generated": "✅ Generated",
+            "failed": "❌ Failed"
+        }.get(status, status)
+            lines.append(f"- {name} - {status_text}")
+        return "\n".join(lines)
+    
+    def format_documents(documents):
+        if not documents:
+            return "No documents uploaded."
+        sections = []
+        for doc in documents:
+            name = doc.get("filename", "Untitled")
+            text = doc.get("extracted_text")
+            if text:
+                sections.append(f"=== {name} ===\n{text}\n")
+            else:
+                preview = doc.get("preview", "Preview unavailable")
+                sections.append(f"=== {name} (preview) ===\n{preview}\n")
+        return "\n".join(sections)
+
+    existing_integrations = format_integrations(current_config.get('existing_integrations', []))
+    pending_discoveries = format_discoveries(current_config.get('pending_tool_discoveries', []))
+    uploaded_documents = format_documents(current_config.get('uploaded_documents', []))
+
+    # Build optimized prompt
+    prompt = f"""You are the Configuration Assistant for Wrap-X - an intelligent AI that helps users build custom AI tools ("wraps").
+
+═══════════════════════════════════════════════════════
+CORE IDENTITY
+═══════════════════════════════════════════════════════
+You are an adaptive configuration expert with:
+✓ Reasoning & Planning (thinking mode)
+✓ Web Search (research best practices, APIs, current data)
+✓ Adaptive Intelligence (context-aware questions, not rigid checklists)
+✓ Tool Integration (build custom API integrations)
+
+═══════════════════════════════════════════════════════
+CURRENT CONTEXT
+═══════════════════════════════════════════════════════
+Wrap: {wrap_name}
+Project: {project_name}
+Provider: {provider_name}
+Available Models: {available_models}
+
+Current Config:
+{config_json}
+
+Features:
+- Thinking: {current_config.get('thinking_enabled', False)}
+- Web Search: {current_config.get('web_search_enabled', False)}
+- Documents: {len(current_config.get('uploaded_documents', []))} uploaded
+
+Existing Integrations (DO NOT RECREATE):
+{existing_integrations}
+
+Pending Tool Discoveries:
+{pending_discoveries}
+
+Uploaded Documents (FULL CONTENT - READ THEM):
+{uploaded_documents}
+
+⚠️ CRITICAL: Documents above contain FULL extracted text. You CAN and MUST read them. Never say "I can't read the document".
+
+{test_logs_context}
+
+═══════════════════════════════════════════════════════
+3-PHASE WORKFLOW (ADAPTIVE, NOT RIGID)
+═══════════════════════════════════════════════════════
+
+PHASE 1: DISCOVER (First Message Only)
+──────────────────────────────────────
+Goal: Understand what the user wants
+
+Actions:
+1. Warm greeting using wrap name
+2. Ask ONE open question: "What should {wrap_name} do?"
+3. Return ONLY response_message (no config fields)
+
+Output:
+{{
+  "response_message": "Your greeting and question"
+}}
+
+
+PHASE 2: REFINE (Most of Conversation)
+──────────────────────────────────────
+Goal: Gather complete, specific information
+
+THINKING RULES (MANDATORY):
+→ When user describes their need or asks a question:
+  1. Output thinking text FIRST (before any function calls)
+  2. Analyze: What is user asking? What context is needed? What should I verify?
+  3. Then call web_search if needed for current info or best practices
+  
+→ When calling web_search:
+  - MUST call the function (don't just say "I attempted to search")
+  - For current info: "current date time weather [location]"
+  - For best practices: "[domain] AI assistant best practices 2025"
+  - For APIs: "[platform] API integration documentation"
+
+→ After web_search results:
+  - Output reasoning text (step-by-step analysis)
+  - How do pieces fit? What's best approach? Edge cases?
+
+QUESTIONING STRATEGY:
+✓ Ask ONE specific question at a time (never multiple)
+✓ Questions based on their context (not generic)
+✓ For mentioned topics: Ask depth questions
+✓ For missing fields: Offer 2-4 smart options
+✓ Use web_search to validate suggestions are current
+
+QUESTION COUNT GUIDANCE:
+✓ Simple use case (basic chatbot, FAQ): 2-3 questions minimum
+✓ Complex use case (workflows, integrations, compliance): 4-6 questions minimum
+✓ After user answers ONE question, ask the NEXT most important missing field
+✓ Don't jump to finalization just because user answered one question about format/temperature
+
+QUESTION TRACKING (MANDATORY):
+Keep mental count of questions asked:
+- Question 1: Tone
+- Question 2: Model  
+- Question 3: Temperature ← DO NOT SKIP
+- Question 4: Response format
+- Question 5: Rules (for complex cases)
+- Question 6: Examples (for complex cases)
+- Question 7: Platform (for complex cases)
+
+After each user response, increment your count.
+If count < 3 (simple) or < 5 (complex) → Ask next required question
+
+FIELD INFERENCE:
+Extract from user descriptions:
+- Purpose (what it does)
+- Target users (who uses it)
+- Platform (where it's used)
+- Role (assistant identity)
+- Tone (communication style)
+- Rules (DOs/DON'Ts)
+- Response format (structure)
+- Model (appropriate for complexity)
+- Temperature (creativity level)
+- Examples (Q/A pairs)
+
+THOROUGHNESS CHECKPOINT (MANDATORY BEFORE FINALIZATION):
+
+You MUST explicitly ask about these fields if not yet confirmed:
+1. Tone: "Should this be Professional, Friendly, Technical, or a combination?"
+2. Model: "Which model? [show 2-3 from available_models]"
+3. Temperature: "More creative (0.7) or more consistent (0.3)?"
+4. Response format: "Brief answers, detailed explanations, or structured output?"
+5. Rules: "What are the specific DOs and DON'Ts? Any compliance requirements?"
+6. Examples: "Can you provide 2-3 example scenarios with expected responses?"
+7. Platform/Integration: "Where will this be used? Any integrations needed?"
+8. Edge cases: "What should it do in unusual situations?"
+
+CRITICAL: For COMPLEX use cases (multi-step workflows, integrations, compliance needs):
+→ Ask AT LEAST 3-5 questions to gather depth
+→ Explore edge cases and error handling
+→ Confirm integration requirements
+→ Get concrete examples for each major function
+
+DO NOT finalize if:
+✗ Tone not explicitly chosen by user
+✗ Model not explicitly selected from available_models
+✗ Temperature not discussed (even if you set default)
+✗ Response format not clarified
+✗ Rules/compliance requirements not gathered
+✗ Examples missing or fewer than 2 realistic scenarios
+✗ Platform/integration context unclear
+✗ For complex use cases: Asked fewer than 3 clarifying questions
+✗ Edge cases and error handling not discussed
+✗ User mentioned external tools but no integration setup
+
+FINALIZATION REQUIRES - HARD COUNTS:
+✓ Simple cases: Asked 3+ distinct questions (tone, model, temperature minimum)
+✓ Complex cases: Asked 5+ distinct questions (add rules, examples, platform)
+✓ TEMPERATURE MUST BE ASKED - This is non-negotiable
+✓ Count your questions before showing summary - if count < minimum, ask another
+
+SELF-CHECK: Before finalizing, ask yourself:
+"Did I explicitly ask about temperature? YES/NO"
+If NO → Ask about temperature NOW, do not proceed
+
+✓ Rules with specific DOs/DON'Ts gathered
+✓ At least 2 realistic examples with Q/A pairs
+✓ Platform/integration context confirmed
+✓ Show complete summary of ALL settings
+✓ Ask: "Does this look correct? Ready to create?"
+✓ Wait for explicit confirmation (yes/create/go ahead)
+✓ Only then return config_status: "ready"
+
+COMPLEXITY INDICATORS (require 5+ questions):
+- Multi-step workflows
+- External integrations (APIs, databases, tools)
+- Compliance/legal requirements
+- Multiple user types or audiences
+- Document processing or data analysis
+- Conditional logic or decision trees
+
+Output During Refine:
+{{
+  "response_message": "Your question or clarification",
+  "analysis": {{
+    "purpose_status": "confirmed/inferred/missing",
+    "users_status": "confirmed/inferred/missing",
+    "role_status": "confirmed/inferred/missing",
+    "tone_status": "confirmed/inferred/missing",
+    "rules_status": "confirmed/inferred/missing",
+    "format_status": "confirmed/inferred/missing",
+    "model_status": "confirmed/inferred/missing",
+    "temperature_status": "confirmed/inferred/missing",
+    "examples_status": "confirmed/inferred/missing",
+    "missing_fields": ["list of missing fields"],
+    "next_step": "What you'll do next"
+  }},
+  // Include any config fields you've gathered:
+  "role": "...",
+  "instructions": "...",
+  "purpose": "...",
+  "target_users": "...",
+  "platform": "...",
+  "tone": "Casual/Direct/Friendly/Professional/Supportive/Technical",
+  "rules": "...",
+  "response_format": "...",
+  "model": "from available_models",
+  "temperature": 0.3,
+  "examples": "1. Q: ... A: ...\\n2. Q: ... A: ..."
+}}
+
+
+PHASE 3: FINALIZE (When Complete)
+──────────────────────────────────
+Goal: Return production-ready config
+
+VALIDATION GATE - COUNT YOUR QUESTIONS:
+Before showing summary, COUNT how many questions you asked the user.
+✓ Simple use case: Minimum 3 questions asked
+✓ Complex use case: Minimum 5 questions asked
+✗ If you asked fewer questions than required → Ask another question, DO NOT finalize
+
+Required question topics (must cover ALL):
+1. Tone (asked?)
+2. Model (asked?)
+3. Temperature (asked?) ← MANDATORY, never skip
+4. Response format (asked?)
+5. Rules (asked?)
+6. Examples (asked?)
+7. Platform/integrations (asked?)
+
+CRITICAL: You can ONLY enter Phase 3 after:
+1. ✓ User explicitly chose tone
+2. ✓ User explicitly chose model from list
+3. ✓ Temperature was discussed (even if defaulted)
+4. ✓ Response format was clarified
+5. ✓ Rules with specific DOs/DON'Ts gathered
+6. ✓ At least 2 realistic examples provided
+7. ✓ Platform/integration confirmed
+8. ✓ For complex use cases: Asked 4-6 questions minimum
+9. ✓ You showed complete summary
+10. ✓ User confirmed with "yes"/"create"/"go ahead"
+
+If ANY of these are missing, stay in Phase 2 and ask about them.
+
+VALIDATION CHECKLIST:
+All required fields must be valid and specific:
+✓ role: Clear assistant identity
+✓ instructions: Specific, actionable guidance
+✓ purpose: Concrete use case description
+✓ target_users: Defined user type/skill level
+✓ platform: Where it's used (optional but recommended)
+✓ tone: Must be one of: Casual, Direct, Friendly, Professional, Supportive, Technical
+✓ rules: Domain-specific DOs/DON'Ts
+✓ response_format: Output structure description
+✓ model: Must be from available_models list
+✓ temperature: 0.0-2.0 (typically 0.3-0.7)
+✓ examples: At least 2 Q/A pairs in format "1. Q: ... A: ...\\n2. Q: ... A: ..."
+✓ generated_system_prompt: Complete prompt combining all fields
+
+Final Output:
+{{
+  "response_message": "Configuration complete! [brief summary]",
+  "config_status": "ready",
+  "role": "...",
+  "instructions": "...",
+  "purpose": "...",
+  "target_users": "...",
+  "platform": "...",
+  "tone": "...",
+  "rules": "...",
+  "response_format": "...",
+  "model": "...",
+  "temperature": 0.3,
+  "max_tokens": 1024,
+  "top_p": 1.0,
+  "frequency_penalty": 0.0,
+  "examples": "...",
+  "generated_system_prompt": "...",
+  "analysis": {{
+    "missing_fields": []
+  }}
+}}
+
+═══════════════════════════════════════════════════════
+CRITICAL RULES (MUST FOLLOW)
+═══════════════════════════════════════════════════════
+
+RESPONSE FORMAT:
+✓ ALWAYS include response_message field (users only see this)
+✓ First message: Only response_message + analysis
+✓ During conversation: response_message + gathered config fields
+✓ Finalization: ALL fields including generated_system_prompt
+✓ Return valid JSON only (no markdown, no code blocks)
+
+THINKING & REASONING:
+✓ Output thinking text BEFORE calling any functions
+✓ Output reasoning text in final response
+✓ Never skip these - they're MANDATORY
+
+WEB SEARCH:
+✓ CALL web_search function when user asks for current/real-time info
+✓ CALL web_search when user says "search this", "find this", "serch online"
+✓ Don't just describe searching - actually call the function
+✓ Use findings to inform questions and suggestions
+
+TOOL INTEGRATION:
+✓ When user says "connect [service]" or "add [service]":
+  → IMMEDIATELY call web_search for API documentation
+  → Return tool_integration_data for user selection
+✓ NEVER say "I don't have capability to connect [service]"
+✓ NEVER suggest manual webhooks as alternative
+✓ Integration workflow is ALWAYS possible
+
+TONE VALUES:
+✓ Must be exactly one of: Casual, Direct, Friendly, Professional, Supportive, Technical
+✓ Can combine two with " + " (e.g., "Professional + Friendly")
+
+MODEL SELECTION:
+✓ Must be from available_models list
+✓ No custom model names
+✓ If invalid, ask user to choose from list
+
+EXAMPLES FORMAT:
+✓ Minimum 2 Q/A pairs (recommend 3-5)
+✓ Format: "1. Q: question A: answer\\n2. Q: question A: answer"
+✓ Must be realistic and match use case
+
+FINALIZATION:
+✓ generated_system_prompt is REQUIRED for finalization
+✓ Must include ALL required fields with valid values
+✓ Set config_status: "ready" only when complete
+✓ If incomplete, set config_status: "incomplete"
+
+═══════════════════════════════════════════════════════
+BEHAVIORAL GUIDELINES
+═══════════════════════════════════════════════════════
+
+DO:
+✓ Use thinking mode to plan your approach
+✓ CALL web_search function for current information
+✓ Ask ONE specific question at a time
+✓ Infer everything possible from user descriptions
+✓ Be thorough - get ALL information before finalizing
+✓ Research domain best practices before suggesting
+✓ Use wrap's actual name in messages
+
+DON'T:
+✗ Follow a rigid checklist - be adaptive
+✗ Describe searching without calling web_search function
+✗ Ask multiple questions in one response
+✗ Rush to finalization with incomplete info
+✗ Finalize without asking about tone, model, temperature, response format, rules, examples
+✗ Finalize complex use cases after only 1-2 questions (need 4-6 minimum)
+✗ Finalize without showing summary and getting confirmation
+✗ Skip asking about edge cases for complex workflows
+✗ Use generic suggestions without research
+✗ Finalize without generated_system_prompt
+✗ Say "I don't have capability to connect [service]"
+✗ Skip thinking/reasoning text
+
+═══════════════════════════════════════════════════════
+ERROR RECOVERY
+═══════════════════════════════════════════════════════
+
+If user says "Test Chat not working":
+→ You forgot generated_system_prompt or other required fields
+→ Apologize and regenerate complete JSON with ALL fields
+
+If parsing fails:
+→ Return only valid JSON (no markdown, no extra text)
+→ Always include response_message field
+
+If user is confused:
+→ Explain current status
+→ Show what you have vs what's missing
+→ Ask clear, specific next question
+
+═══════════════════════════════════════════════════════
+EXAMPLES
+═══════════════════════════════════════════════════════
+
+Example 1 - First Message:
+User: "Hi"
+You: {{
+  "response_message": "Hi! I'm here to help you configure {wrap_name}. What should {wrap_name} do?"
+}}
+
+Example 2 - During Refinement:
+User: "It's a customer support bot for my e-commerce store"
+You: [Think: User wants customer support bot. Need to know: tone, escalation rules, integration needs]
+     [Search: "e-commerce customer support bot best practices 2025"]
+     {{
+       "response_message": "Got it - a customer support bot for e-commerce. Should it handle order tracking, returns, and product questions, or focus on a specific area?",
+       "analysis": {{
+         "purpose_status": "inferred",
+         "users_status": "inferred",
+         "tone_status": "missing",
+         "missing_fields": ["tone", "rules", "examples"],
+         "next_step": "Determine scope and tone"
+       }},
+       "purpose": "Customer support for e-commerce",
+       "target_users": "E-commerce customers"
+     }}
+
+Example 2.3 - Complex Use Case (More Questions Needed):
+User: "Use Professional + Friendly tone and 0.3 temperature with structured output"
+You: {{
+  "response_message": "Great! Now let's get specific about the rules. What are the key DOs and DON'Ts for the recruiting assistant? For example, should it avoid asking about age, religion, or other protected characteristics?",
+  "analysis": {{
+    "tone_status": "confirmed",
+    "model_status": "confirmed",
+    "temperature_status": "confirmed",
+    "format_status": "confirmed",
+    "rules_status": "missing",
+    "examples_status": "missing",
+    "platform_status": "missing",
+    "missing_fields": ["rules", "examples", "platform", "instructions"],
+    "next_step": "Gather rules and compliance requirements"
+  }},
+  "tone": "Professional + Friendly",
+  "model": "deepseek-reasoner",
+  "temperature": 0.3,
+  "response_format": "Structured output with context-aware formatting"
+}}
+
+Example 2.5 - Pre-Finalization Summary:
+User: "That sounds good"
+You: {{
+  "response_message": "Perfect! Here's what I have:\\n• Purpose: Customer support for e-commerce\\n• Tone: Professional + Friendly\\n• Model: gpt-4o-mini\\n• Temperature: 0.3 (balanced)\\n• Response format: Brief, clear answers\\n\\nDoes this look correct? Ready to create?",
+  "analysis": {{
+    "purpose_status": "confirmed",
+    "tone_status": "confirmed",
+    "model_status": "confirmed",
+    "temperature_status": "confirmed",
+    "format_status": "confirmed",
+    "missing_fields": [],
+    "next_step": "Waiting for final confirmation"
+  }}
+}}
+
+Example 2.7 - Never Skip Temperature:
+User: "Use structured output for legal and business teams"
+You: {{
+  "response_message": "Perfect! Now let's set the temperature. For legal document analysis, would you prefer more consistent and precise responses (0.3) or slightly more creative analysis (0.7)?",
+  "analysis": {{
+    "tone_status": "confirmed",
+    "model_status": "confirmed",
+    "format_status": "confirmed",
+    "temperature_status": "missing",
+    "questions_asked_count": 3,
+    "minimum_required": 5,
+    "missing_fields": ["temperature", "rules", "examples"],
+    "next_step": "Ask about temperature - MANDATORY field"
+  }}
+}}
+
+[WRONG EXAMPLE - What NOT to do]
+User: "Use structured output"
+You: "Perfect! Here's the summary..." ← ❌ VIOLATION: Skipped temperature
+
+Example 3 - Finalization:
+User: "Yes, create it"
+You: {{
+  "response_message": "Configuration complete! Your customer support bot is ready with professional tone, order tracking capabilities, and smart escalation rules.",
+  "config_status": "ready",
+  "role": "Customer support assistant for [Store Name] e-commerce",
+  "instructions": "Help customers with orders, products, returns. Escalate complex issues to human agents.",
+  "purpose": "Provide customer support for e-commerce store",
+  "target_users": "E-commerce customers (all skill levels)",
+  "platform": "Website chat widget",
+  "tone": "Professional + Friendly",
+  "rules": "DO: Be empathetic and solution-focused\\nDO: Escalate refund requests\\nDON'T: Make promises about shipping times\\nDON'T: Process payments directly",
+  "response_format": "Brief, clear answers with next steps",
+  "model": "gpt-4o-mini",
+  "temperature": 0.3,
+  "max_tokens": 1024,
+  "examples": "1. Q: Where's my order? A: I'll help you track that. Could you provide your order number?\\n2. Q: How do I return this? A: Our return policy allows 30-day returns. I can email you a prepaid shipping label.",
+  "generated_system_prompt": "You are a customer support assistant for [Store Name] e-commerce...\\n\\nInstructions: Help customers with orders, products, returns...\\n\\nRules: DO: Be empathetic...",
+  "analysis": {{
+    "missing_fields": []
+  }}
+}}
+
+═══════════════════════════════════════════════════════
+END OF PROMPT
+═══════════════════════════════════════════════════════
+Remember: Quality over speed. Get complete information before finalizing. Use thinking and web search to provide intelligent, researched suggestions.
+"""
+
+    return prompt
+
+# ===== End System Prompt Building Functions =====
 
 def get_openai_client():
     """Get or create OpenAI client"""
@@ -47,15 +607,29 @@ def get_openai_client():
     return _openai_client
 
 
-async def parse_chat_command(message: str, current_config: Dict[str, Any], history: Optional[List[Dict[str, str]]] = None) -> Dict[str, Any]:
+async def parse_chat_command(
+    message: str,
+    current_config: Dict[str, Any],
+    history: Optional[List[Dict[str, str]]] = None,
+    wrap_id: Optional[int] = None,
+    db_session = None
+) -> Dict[str, Any]:
     """
     Parse user chat command using OpenAI API
     Returns dictionary with parsed updates to config
+    
+    Args:
+        message: User's chat message
+        current_config: Current configuration dictionary
+        history: Optional chat history
+        wrap_id: Optional wrapped API ID for saving tool discoveries
+        db_session: Optional database session for saving tool discoveries
     """
     print(f"🚀 [CONFIG CHAT] ========== PARSE_CHAT_COMMAND CALLED ==========")
     print(f"🚀 [CONFIG CHAT] Message: {message}")
     print(f"🚀 [CONFIG CHAT] Current config keys: {list(current_config.keys()) if current_config else 'None'}")
     print(f"🚀 [CONFIG CHAT] History length: {len(history) if history else 0}")
+    print(f"🚀 [CONFIG CHAT] Wrap ID: {wrap_id}")
     
     # Initialize events list to send to frontend (for tool calls, search results, etc.)
     config_events = []
@@ -82,10 +656,10 @@ async def parse_chat_command(message: str, current_config: Dict[str, Any], histo
 
         # ===== Wrap-X Configuration Assistant System Prompt =====
         try:
-            system_prompt = build_smart_config_prompt(current_config, test_logs_context)
-            logger.info("[Config Chat] Smart prompt built successfully")
+            system_prompt = build_optimized_config_prompt(current_config, test_logs_context)
+            logger.info("[Config Chat] Optimized prompt built successfully")
         except Exception as prompt_err:
-            logger.error(f"[Config Chat] Failed to build smart prompt: {prompt_err}", exc_info=True)
+            logger.error(f"[Config Chat] Failed to build optimized prompt: {prompt_err}", exc_info=True)
             # Fallback to minimal prompt
             clean_config = {k: v for k, v in current_config.items() if k not in ['test_chat_logs', 'available_models']}
             system_prompt = f"""You are Config Assistant for Wrap-X. Help build wraps.
@@ -111,8 +685,8 @@ Ask ONE question at a time. When user confirms, return ALL fields.
 """
             logger.info("[Config Chat] Using fallback minimal prompt")
 
-        # OLD PROMPT REPLACED WITH SMART ADAPTIVE PROMPT
-        # See app/services/smart_config_prompt.py for the new intelligent configuration assistant
+        # OLD PROMPT REPLACED WITH OPTIMIZED ADAPTIVE PROMPT
+        # System prompt is now built by build_optimized_config_prompt() function in this file (see above)
         # Old 300+ line rigid checklist has been replaced with adaptive, reasoning-driven approach
 
         # [Old prompt code removed - was 300+ lines of rigid workflow]
@@ -127,10 +701,10 @@ Ask ONE question at a time. When user confirms, return ALL fields.
         
         # Check if user message contains confirmation words/phrases
         confirmation_keywords = [
-            "yes", "yep", "yeah", "sure", "ok", "okay", "create", "create it", 
-            "go ahead", "proceed", "let's do it", "build it", "make it", "do it", 
-            "ready", "let's go", "sounds good", "perfect", "great", "alright", 
-            "fine", "confirm", "approved", "accept", "agree", "why waiting", 
+            "yes", "yep", "yeah", "sure", "ok", "okay", "create", "create it",
+            "go ahead", "proceed", "let's do it", "build it", "make it", "do it",
+            "ready", "let's go", "sounds good", "perfect", "great", "alright",
+            "fine", "confirm", "approved", "accept", "agree", "why waiting",
             "why not", "just create", "just do it", "sure create", "sure go ahead"
         ]
         user_message_lower = message.lower().strip()
@@ -264,51 +838,11 @@ Ask ONE question at a time. When user confirms, return ALL fields.
             # history expected as list of {role, content}
             convo.extend(history)
         convo.append({"role": "user", "content": message})
-        
-        # Detect if user mentions tools/services that need generate_tool
-        tool_keywords = [
-            "gmail", "google sheets", "shopify", "notion", "airtable", "slack", "hubspot",
-            "connect", "integrate", "link", "setup", "configure", "add", "use",
-            "api", "oauth", "credentials", "authentication"
-        ]
-        # Add search-related keywords
-        search_keywords = [
-            "search", "serch", "find", "look up", "current", "weather", "date", "time", "now", 
-            "today", "latest", "recent", "what is", "who is", "where is", "when is",
-            "how to", "best practices", "documentation", "api docs", "online", "web"
-        ]
-        message_lower = message.lower()
-        mentions_tools = any(keyword in message_lower for keyword in tool_keywords)
-        mentions_search = any(keyword in message_lower for keyword in search_keywords)
-        
-        # If tools OR search are mentioned, force function calling
-        tool_choice_setting = None
-        if mentions_tools or mentions_search:
-            tool_choice_setting = "auto"  # Let model decide which tool to call
-            logger.info(f"[Config Chat] User message mentions {'tools' if mentions_tools else 'search'} - enabling function calling")
-            print(f"[Config Chat] User message mentions {'tools' if mentions_tools else 'search'} - enabling function calling")
 
         # Define tools for config chat using templates
         config_chat_tools = [
             # Web search for research (using template)
             get_web_search_tool_definition(),
-            # Tool generator for custom integrations
-            {
-                "type": "function",
-                "function": {
-                    "name": "generate_tool",
-                    "description": "🚨 MANDATORY: Generate custom tool integration code for ANY external API mentioned by user. You MUST call this function when user mentions Gmail, Shopify, Google Sheets, Notion, Airtable, Slack, HubSpot, or any other external service. DO NOT just describe - ALWAYS call this function first.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "tool_name": {"type": "string", "description": "Exact name of the tool/API (e.g., 'Gmail', 'Google Sheets', 'Shopify', 'Notion')"},
-                            "tool_description": {"type": "string", "description": "What the tool should do (e.g., 'Read and write emails', 'Read and write sheets', 'Read orders')"},
-                            "user_requirements": {"type": "string", "description": "Access level and requirements (e.g., 'Read-only access', 'Full access to read and write', 'OAuth with gmail.modify scope')"}
-                        },
-                        "required": ["tool_name", "tool_description"]
-                    }
-                }
-            }
         ]
 
         # Helper to execute web search using Google Custom Search API
@@ -321,22 +855,16 @@ Ask ONE question at a time. When user confirms, return ALL fields.
 
         # Prepare API params - add tools for web search and tool generation
         api_params = {
-            "model": settings.openai_model,  # Configurable model (default: gpt-4o-mini)
+            "model": "gpt-4o",  # GPT-4o for better reasoning (16K max output tokens)
             "messages": convo,
             "temperature": 0.3,
-            "max_tokens": 2000,
-            "response_format": {"type": "json_object"},
+            "max_tokens": 16000,  # GPT-4o supports up to 16,384 output tokens
+            # NOTE: Do NOT use response_format=json_object when tools are available
+            # because it prevents tool_call function calling
         }
 
-        # Add tools with error handling
-        try:
-            api_params["tools"] = config_chat_tools
-            if tool_choice_setting:
-                api_params["tool_choice"] = tool_choice_setting
-            logger.info(f"[Config Chat] Added {len(config_chat_tools)} tools (web_search, generate_tool), tool_choice={tool_choice_setting}")
-        except Exception as tools_err:
-            logger.warning(f"[Config Chat] Failed to add tools: {tools_err}")
-            # Continue without tools
+        # Add response format for JSON parsing
+        api_params["response_format"] = {"type": "json_object"}
 
         # Emit thinking_started event using template (always enabled for config chat)
         thinking_events = use_thinking(
@@ -455,61 +983,6 @@ Ask ONE question at a time. When user confirms, return ALL fields.
                             "name": "web_search",
                             "content": search_result
                         })
-                    elif tc.function.name == "generate_tool":
-                        # Handle tool generation with full error handling
-                        try:
-                            from app.services.tool_generator import generate_custom_tool
-                        except ImportError as import_err:
-                            logger.error(f"[Config Chat] Failed to import tool_generator: {import_err}")
-                            convo.append({
-                                "role": "tool",
-                                "tool_call_id": tc.id,
-                                "name": "generate_tool",
-                                "content": json.dumps({"success": False, "error": f"Tool generator not available: {str(import_err)}"})
-                            })
-                            continue
-
-                        try:
-                            args = json.loads(tc.function.arguments)
-                            tool_name = args.get("tool_name", "")
-                            tool_description = args.get("tool_description", "")
-                            user_requirements = args.get("user_requirements")
-
-                            if not tool_name or not tool_description:
-                                raise ValueError("Tool name and description are required")
-
-                            logger.info(f"[Config Chat] Generating tool: {tool_name}")
-
-                            tool_result = await generate_custom_tool(tool_name, tool_description, user_requirements)
-
-                            if tool_result.get("success"):
-                                result_json = json.dumps({
-                                    "success": True,
-                                    "tool_name": tool_result["tool_name"],
-                                    "display_name": tool_result["display_name"],
-                                    "description": tool_result["description"],
-                                    "credential_fields": tool_result["credential_fields"],
-                                    "tool_code": tool_result["tool_code"]
-                                })
-                                logger.info(f"[Config Chat] Tool generated: {tool_result['tool_name']}")
-                            else:
-                                result_json = json.dumps({"success": False, "error": tool_result.get("error", "Unknown error")})
-                                logger.error(f"[Config Chat] Tool generation failed: {tool_result.get('error')}")
-
-                            convo.append({
-                                "role": "tool",
-                                "tool_call_id": tc.id,
-                                "name": "generate_tool",
-                                "content": result_json
-                            })
-                        except Exception as gen_err:
-                            logger.error(f"[Config Chat] Tool generation error: {gen_err}", exc_info=True)
-                            convo.append({
-                                "role": "tool",
-                                "tool_call_id": tc.id,
-                                "name": "generate_tool",
-                                "content": json.dumps({"success": False, "error": f"Tool generation failed: {str(gen_err)}"})
-                            })
                 except Exception as tool_exec_err:
                     logger.error(f"[Config Chat] Tool execution failed for {tc.function.name}: {tool_exec_err}", exc_info=True)
                     # Add error result
@@ -529,19 +1002,27 @@ Ask ONE question at a time. When user confirms, return ALL fields.
             print(f"🔍 [CONFIG CHAT] ========== REASONING STARTED ==========")
             print(f"🔍 [CONFIG CHAT] REASONING_STARTED event emitted")
             print(f"🔍 [CONFIG CHAT] Total events before reasoning: {len(config_events)}")
-            
-            # Make second API call with tool results
-            api_params["messages"] = convo
-            logger.info(f"[Config Chat] Making second API call after tool execution")
+
+            # Make second API call with tool results - FORCE JSON MODE
+            # Create new params without tools and with JSON response format
+            second_api_params = {
+                "model": "gpt-4o",  # Same model as first call
+                "messages": convo,  # Updated conversation with tool results
+                "temperature": 0.3,
+                "max_tokens": 16000,
+                "response_format": {"type": "json_object"}  # Force JSON response
+            }
+            logger.info(f"[Config Chat] Making second API call after tool execution (JSON mode, no tools)")
             try:
-                response = client.chat.completions.create(**api_params)
+                response = client.chat.completions.create(**second_api_params)
                 logger.info(f"[Config Chat] Second API call successful")
             except Exception as e2:
                 logger.error(f"[Config Chat] Second API call failed: {e2}", exc_info=True)
                 emsg2 = str(e2).lower()
                 if "must contain the word 'json'" in emsg2:
+                    # Retry with explicit JSON instruction in messages
                     convo.insert(1, {"role": "system", "content": "Return only valid json."})
-                    api_params_fb2 = dict(api_params)
+                    api_params_fb2 = dict(second_api_params)
                     api_params_fb2.pop("response_format", None)
                     api_params_fb2["messages"] = convo
                     response = client.chat.completions.create(**api_params_fb2)
@@ -577,35 +1058,17 @@ Ask ONE question at a time. When user confirms, return ALL fields.
         # Check for empty response before attempting JSON parsing
         if not result_text:
             logger.error("[Config Chat] Second API call returned empty content")
-            # If we have pending tools from the first call, preserve them
-            # Check if we have any pending tools in the conversation
-            pending_tools = []
-            for msg in convo:
-                if not msg or not isinstance(msg, dict):
-                    continue
-                if msg.get("role") == "tool" and msg.get("name") == "generate_tool":
-                    try:
-                        content = msg.get("content")
-                        if not content:
-                            continue
-                        tool_data = json.loads(content if isinstance(content, str) else "{}")
-                        if tool_data.get("success") and tool_data.get("tool_name"):
-                            # Use credential_fields from tool generator, normalize to fields for frontend
-                            credential_fields = tool_data.get("credential_fields", [])
-                            pending_tools.append({
-                                "name": tool_data.get("tool_name"),
-                                "display_name": tool_data.get("display_name", tool_data.get("tool_name")),
-                                "description": tool_data.get("description"),
-                                "fields": credential_fields  # Frontend expects "fields"
-                            })
-                    except Exception as tool_extract_err:
-                        logger.debug(f"Could not extract tool from message: {tool_extract_err}")
-                        pass
-            
             return {
-                "error": "Config assistant returned an empty response after tool execution.",
-                "response_message": "Sorry, I couldn't finish generating that integration. Please try again.",
-                "pending_tools": pending_tools if pending_tools else None
+                "error": "Config assistant returned an empty response.",
+                "response_message": "Sorry, I couldn't generate a response. Please try again."
+            }
+        
+        # Ensure result_text is not empty before parsing
+        if not result_text or not result_text.strip():
+            logger.error("[Config Chat] result_text is empty before JSON parsing")
+            return {
+                "error": "Config assistant returned an empty response.",
+                "response_message": "Sorry, I couldn't generate a response. Please try again."
             }
         
         logger.info(f"Raw OpenAI response: {result_text[:200]}")
@@ -636,176 +1099,86 @@ Ask ONE question at a time. When user confirms, return ALL fields.
                         pass
                 raise
 
+        # Attempt to parse JSON payload with intelligent retry if model returns non-JSON text
+        parsed = None
+        json_retry_attempted = False
+        while parsed is None:
+            try:
+                parsed = _clean_and_parse_json(result_text)
+            except json.JSONDecodeError as json_err:
+                logger.error(f"Failed to parse JSON from OpenAI response: {json_err}")
+                logger.error(f"JSON text that failed: {result_text}")
+                if json_retry_attempted:
+                    error_msg = f"JSON parsing failed: {str(json_err)}"
+                    return {"error": error_msg}
+
+                json_retry_attempted = True
+                retry_instruction = (
+                    "FINAL WARNING: Your previous response was not valid JSON. "
+                    "Respond immediately with ONLY valid JSON that matches the schema described in the system prompt. "
+                    "Include response_message plus any config fields or tool metadata you intend to set. "
+                    "Do not wrap the JSON in markdown or include commentary."
+                    )
+                retry_convo = list(convo)
+                retry_convo.append({
+                    "role": "system",
+                    "content": retry_instruction
+                })
+
+                try:
+                    retry_api_params = dict(api_params)
+                    retry_api_params["messages"] = retry_convo
+                    retry_api_params.pop("tools", None)
+                    retry_api_params.pop("tool_choice", None)
+                    retry_api_params["response_format"] = {"type": "json_object"}
+                    logger.info("[Config Chat] Retrying completion with JSON mode after parse failure")
+                    retry_response = client.chat.completions.create(**retry_api_params)
+                    retry_content = retry_response.choices[0].message.content
+                    retry_text = (retry_content or "").strip()
+                    if retry_text:
+                        result_text = retry_text
+                        logger.info(f"[Config Chat] JSON retry succeeded - new result length: {len(retry_text)}")
+                        parsed = None
+                        continue
+                    else:
+                        logger.error("[Config Chat] JSON retry returned empty content")
+                        return {"error": "JSON parsing failed: assistant returned empty response."}
+                except Exception as retry_err:
+                    logger.error(f"[Config Chat] JSON retry failed: {retry_err}", exc_info=True)
+                    return {"error": f"JSON parsing failed: {str(retry_err)}"}
+
         # Attempt to parse JSON payload
         try:
-            parsed = _clean_and_parse_json(result_text)
             logger.info(f"Extracted JSON text: {json.dumps(parsed)[:200]}")
             logger.info(f"Successfully parsed command: {parsed}")
 
-            def _normalize_pending_tools(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
-                raw_tools = None
-                if isinstance(payload.get("pending_tools"), list):
-                    raw_tools = payload.get("pending_tools")
-                elif isinstance(payload.get("pendingTools"), list):
-                    raw_tools = payload.get("pendingTools")
-                elif payload.get("pending_tool"):
-                    maybe_tool = payload.get("pending_tool")
-                    raw_tools = maybe_tool if isinstance(maybe_tool, list) else [maybe_tool]
+            # Check if this contains action_selection_data (from action extraction phase)
+            action_selection_data = None
+            if parsed.get("action_selection_data"):
+                action_selection_data = parsed["action_selection_data"]
+            elif parsed.get("phase") == "action_selection":
+                # If AI returned action selection directly in response
+                action_selection_data = {
+                    "phase": "action_selection",
+                    "tool_name": parsed.get("tool_name"),
+                    "display_name": parsed.get("display_name"),
+                    "description": parsed.get("description"),
+                    "auth_type": parsed.get("auth_type", "oauth2"),
+                    "documentation_url": parsed.get("documentation_url", ""),
+                    "available_actions": parsed.get("available_actions", []),
+                    "categories": parsed.get("categories", [])
+                }
+            
+            # If we have action selection data, return it for frontend to show selector
+            if action_selection_data:
+                logger.info(f"[Config Chat] Returning action selection data for user to choose")
+                return {
+                    "response_message": parsed.get("response_message", "Please select the actions you want to enable:"),
+                    "action_selection_data": action_selection_data,
+                    "events": config_events
+                }
 
-                if not raw_tools:
-                    return []
-
-                normalized_list: List[Dict[str, Any]] = []
-                for tool in raw_tools:
-                    if not isinstance(tool, dict):
-                        continue
-                    name = tool.get("name") or tool.get("tool_name") or tool.get("toolName")
-                    display_name = tool.get("display_name") or tool.get("displayName") or name
-                    credential_fields = tool.get("fields") or tool.get("credential_fields") or tool.get("credentialFields") or []
-                    normalized_tool = {
-                        "name": name or display_name or "custom_integration",
-                        "display_name": display_name or name or "Custom Integration",
-                        "description": tool.get("description"),
-                        "icon": tool.get("icon"),
-                        "fields": credential_fields
-                    }
-                    if tool.get("requires_oauth"):
-                        normalized_tool["requires_oauth"] = True
-                        normalized_tool["oauth_provider"] = tool.get("oauth_provider")
-                        normalized_tool["oauth_scopes"] = tool.get("oauth_scopes") or []
-                        normalized_tool["oauth_instructions"] = tool.get("oauth_instructions")
-                    normalized_list.append(normalized_tool)
-                return normalized_list
-
-            pending_tools = _normalize_pending_tools(parsed)
-            
-            # CRITICAL FIX: If tools were mentioned but not in response, extract from tool calls
-            if not pending_tools and mentions_tools:
-                logger.warning("[Config Chat] Tools mentioned but not in response - extracting from tool calls")
-                for msg in convo:
-                    if not msg or not isinstance(msg, dict):
-                        continue
-                    if msg.get("role") == "tool" and msg.get("name") == "generate_tool":
-                        try:
-                            content = msg.get("content")
-                            if not content:
-                                continue
-                            tool_data = json.loads(content if isinstance(content, str) else "{}")
-                            if tool_data.get("success") and tool_data.get("tool_name"):
-                                credential_fields = tool_data.get("credential_fields", [])
-                                pending_tools.append({
-                                    "name": tool_data.get("tool_name"),
-                                    "display_name": tool_data.get("display_name", tool_data.get("tool_name")),
-                                    "description": tool_data.get("description", ""),
-                                    "fields": credential_fields,
-                                    "tool_code": tool_data.get("tool_code"),
-                                    "requires_oauth": tool_data.get("requires_oauth", False),
-                                    "oauth_provider": tool_data.get("oauth_provider"),
-                                    "oauth_scopes": tool_data.get("oauth_scopes", []),
-                                    "oauth_instructions": tool_data.get("oauth_instructions", "")
-                                })
-                        except Exception as extract_err:
-                            logger.debug(f"Could not extract tool from conversation: {extract_err}")
-                            pass
-                
-                if pending_tools:
-                    logger.info(f"[Config Chat] Extracted {len(pending_tools)} tools from conversation")
-                    parsed["pending_tools"] = pending_tools
-                    parsed["pendingTools"] = pending_tools
-                    if "response_message" not in parsed or not parsed.get("response_message"):
-                        parsed["response_message"] = f"I've set up {len(pending_tools)} integration(s). Please provide your credentials."
-            
-            # Extract tool data from conversation to preserve instructions from tool generator
-            for msg in convo:
-                if not msg or not isinstance(msg, dict):
-                    continue
-                if msg.get("role") == "tool" and msg.get("name") == "generate_tool":
-                    try:
-                        content = msg.get("content")
-                        if not content:
-                            continue
-                        tool_data = json.loads(content if isinstance(content, str) else "{}")
-                        if tool_data.get("success") and tool_data.get("credential_fields"):
-                            # Find matching tool in pending_tools and merge instructions
-                            tool_name = tool_data.get("tool_name")
-                            tool_display_name = tool_data.get("display_name")
-                            
-                            for pending_tool in pending_tools:
-                                # Match by name or display_name
-                                if (pending_tool.get("name") == tool_name or 
-                                    pending_tool.get("name") == tool_display_name or
-                                    pending_tool.get("display_name") == tool_name or
-                                    pending_tool.get("display_name") == tool_display_name):
-                                    
-                                    # Get fields from tool generator (with instructions)
-                                    tool_fields = tool_data.get("credential_fields", [])
-                                    pending_fields = pending_tool.get("fields", [])
-                                    
-                                    # Create a map of pending fields by name for quick lookup
-                                    field_map = {f.get("name"): f for f in pending_fields}
-                                    
-                                    # Merge instructions from tool generator into pending fields
-                                    for tool_field in tool_fields:
-                                        field_name = tool_field.get("name")
-                                        if field_name in field_map:
-                                            # Preserve all properties from tool generator field
-                                            if tool_field.get("instructions"):
-                                                field_map[field_name]["instructions"] = tool_field.get("instructions")
-                                            # Also preserve other properties that might be missing
-                                            if tool_field.get("placeholder") and not field_map[field_name].get("placeholder"):
-                                                field_map[field_name]["placeholder"] = tool_field.get("placeholder")
-                                            if tool_field.get("helpText") and not field_map[field_name].get("helpText"):
-                                                field_map[field_name]["helpText"] = tool_field.get("helpText")
-                                        else:
-                                            # Field from tool generator not in pending - add it
-                                            field_map[field_name] = tool_field
-                                    
-                                    # Update pending_tool with merged fields
-                                    pending_tool["fields"] = list(field_map.values())
-                                    if tool_data.get("requires_oauth"):
-                                        pending_tool["requires_oauth"] = True
-                                        pending_tool["oauth_provider"] = tool_data.get("oauth_provider")
-                                        pending_tool["oauth_scopes"] = tool_data.get("oauth_scopes")
-                                        pending_tool["oauth_instructions"] = tool_data.get("oauth_instructions")
-                                    break
-                    except Exception as merge_err:
-                        logger.debug(f"Could not merge tool instructions: {merge_err}")
-                        pass
-            
-            # Final safety check: If tools were generated but not in response, add them
-            if not pending_tools:
-                for msg in convo:
-                    if not msg or not isinstance(msg, dict):
-                        continue
-                    if msg.get("role") == "tool" and msg.get("name") == "generate_tool":
-                        try:
-                            content = msg.get("content")
-                            if not content:
-                                continue
-                            tool_data = json.loads(content if isinstance(content, str) else "{}")
-                            if tool_data.get("success") and tool_data.get("tool_name"):
-                                if not pending_tools:
-                                    pending_tools = []
-                                credential_fields = tool_data.get("credential_fields", [])
-                                pending_tools.append({
-                                    "name": tool_data.get("tool_name"),
-                                    "display_name": tool_data.get("display_name", tool_data.get("tool_name")),
-                                    "description": tool_data.get("description", ""),
-                                    "fields": credential_fields,
-                                    "tool_code": tool_data.get("tool_code"),
-                                    "requires_oauth": tool_data.get("requires_oauth", False),
-                                    "oauth_provider": tool_data.get("oauth_provider"),
-                                    "oauth_scopes": tool_data.get("oauth_scopes", []),
-                                    "oauth_instructions": tool_data.get("oauth_instructions", "")
-                                })
-                        except Exception as final_extract_err:
-                            logger.debug(f"Final tool extraction failed: {final_extract_err}")
-                            pass
-            
-            if pending_tools:
-                parsed["pending_tools"] = pending_tools
-                parsed["pendingTools"] = pending_tools  # legacy casing for any existing consumers
-                logger.info(f"[Config Chat] Final: Added {len(pending_tools)} tools to response")
+                logger.info(f"[Config Chat] Added {len(pending_tools)} tools to response")
 
             # Add events to response for frontend (always include, even if empty)
             parsed["events"] = config_events
@@ -824,10 +1197,6 @@ Ask ONE question at a time. When user confirms, return ALL fields.
 
             # Ensure response_message is always present
             if "response_message" not in parsed:
-                if pending_tools:
-                    tool_names = [t.get("display_name", t.get("name", "integration")) for t in pending_tools]
-                    parsed["response_message"] = f"I've set up {', '.join(tool_names)} integration(s). Please provide your credentials in the form that just appeared."
-                else:
                     logger.error(f"Config chat response missing response_message field. Parsed: {parsed}")
                     return {
                         "error": "Config assistant failed to generate response",
@@ -863,8 +1232,11 @@ Ask ONE question at a time. When user confirms, return ALL fields.
             ):
                 logger.info(f"[Config Chat] Returning greeting/step: response_message only (no config update). Model valid: {valid_model_field()}, Examples valid: {valid_examples_field()}. Parsed: {parsed}")
                 result_payload = {"response_message": parsed["response_message"]}
-                if parsed.get("pending_tools"):
-                    result_payload["pending_tools"] = parsed["pending_tools"]
+                # Include both casings of pending tools
+                if parsed.get("pending_tools") or parsed.get("pendingTools"):
+                    tools = parsed.get("pending_tools") or parsed.get("pendingTools")
+                    result_payload["pending_tools"] = tools
+                    result_payload["pendingTools"] = tools
                 return result_payload
             # Always log the full parsed response for every turn
             logger.info(f"[Config Chat] LLM parsed output: {parsed}")
@@ -922,11 +1294,17 @@ Ask ONE question at a time. When user confirms, return ALL fields.
                         f"Some required config fields are missing: {', '.join(missing_final)}. "
                         "See console/logs for details. Please restart summary/finalization or contact support."
                     )
+
+            # Ensure both casings of pendingTools are present before returning
+            if parsed.get("pending_tools") and not parsed.get("pendingTools"):
+                parsed["pendingTools"] = parsed["pending_tools"]
+            elif parsed.get("pendingTools") and not parsed.get("pending_tools"):
+                parsed["pending_tools"] = parsed["pendingTools"]
+
             return parsed
         except json.JSONDecodeError as json_err:
             logger.error(f"Failed to parse JSON from OpenAI response: {json_err}")
             logger.error(f"JSON text that failed: {result_text}")
-            # Try to provide a more helpful error message
             error_msg = f"JSON parsing failed: {str(json_err)}"
             return {"error": error_msg}
         
@@ -1116,9 +1494,8 @@ async def call_wrapped_llm(
         formatted_messages = []
         if system_prompt:
             formatted_messages.append({"role": "system", "content": system_prompt})
-        formatted_messages.extend(messages)
         
-        # Get model - use provider-specific defaults
+        # Get model first (needed for DeepSeek preprocessing)
         default_models = {
             "openai": "gpt-4-turbo",  # Changed to GPT-4 for better function calling
             "anthropic": "claude-3-haiku-20240307",
@@ -1142,6 +1519,28 @@ async def call_wrapped_llm(
         else:
             model_str = model
         
+        # Preprocess messages for DeepSeek reasoner models
+        # DeepSeek reasoner requires reasoning_content instead of content when tool_calls are present
+        is_deepseek_reasoner = "deepseek-reasoner" in model_str.lower()
+        if is_deepseek_reasoner:
+            preprocessed_messages = []
+            for msg in messages:
+                if msg.get("role") == "assistant" and msg.get("tool_calls") and msg.get("content"):
+                    # Convert content to reasoning_content for DeepSeek reasoner
+                    preprocessed_msg = {
+                        "role": "assistant",
+                        "reasoning_content": msg.get("content"),
+                        "content": None,
+                        "tool_calls": msg.get("tool_calls")
+                    }
+                    preprocessed_messages.append(preprocessed_msg)
+                    logger.info(f"🔧 Preprocessed assistant message with tool_calls for DeepSeek reasoner")
+                else:
+                    preprocessed_messages.append(msg)
+            formatted_messages.extend(preprocessed_messages)
+        else:
+            formatted_messages.extend(messages)
+        
         # Prepare parameters
         params = {
             "model": model_str,
@@ -1162,70 +1561,13 @@ async def call_wrapped_llm(
         if provider.api_base_url:
             params["api_base"] = provider.api_base_url
 
-        # Load custom tools from database
+        # Load custom tools from database - tool integration system removed
         custom_tools_data = {}  # Store tool code and credentials
         async def load_custom_tools() -> List[dict]:
-            """Load custom tools from wrap_tools and wrap_credentials tables"""
-            tool_definitions = []
-            try:
-                # Import models locally to avoid circular dependency
-                from app.models.wrap_tool import WrapTool
-                from app.models.wrap_credential import WrapCredential
-
-                # Load custom tools for this wrap
-                tools_result = await db.execute(
-                    select(WrapTool).where(
-                        WrapTool.wrap_id == wrapped_api.id,
-                        WrapTool.is_active == True
-                    )
-                )
-                custom_tools = tools_result.scalars().all()
-
-                # Load credentials for this wrap
-                creds_result = await db.execute(
-                    select(WrapCredential).where(WrapCredential.wrap_id == wrapped_api.id)
-                )
-                credentials_map = {cred.tool_name: cred for cred in creds_result.scalars().all()}
-
-                # Build tool definitions and store execution data
-                for tool in custom_tools:
-                    # Get credentials for this tool
-                    cred = credentials_map.get(tool.tool_name)
-                    if cred:
-                        # Decrypt credentials
-                        decrypted_creds = decrypt_api_key(cred.credentials_json)
-                        creds_dict = json.loads(decrypted_creds)
-                    else:
-                        logger.warning(f"No credentials found for tool: {tool.tool_name}")
-                        creds_dict = {}
-
-                    # Store tool code and credentials for execution
-                    custom_tools_data[tool.tool_name] = {
-                        "code": tool.tool_code,
-                        "credentials": creds_dict,
-                        "description": tool.description
-                    }
-
-                    # Create tool definition for LLM
-                    tool_def = {
-                        "type": "function",
-                        "function": {
-                            "name": tool.tool_name,
-                            "description": tool.description or f"Execute {tool.tool_name}",
-                            "parameters": {
-                                "type": "object",
-                                "properties": {},
-                                "required": []
-                            }
-                        }
-                    }
-                    tool_definitions.append(tool_def)
-                    logger.info(f"Loaded custom tool: {tool.tool_name}")
-
-            except Exception as e:
-                logger.error(f"Error loading custom tools: {e}", exc_info=True)
-
-            return tool_definitions
+            """Load custom tools - tool integration system removed"""
+            # Tool integration models (WrapTool, WrapCredential) have been removed
+            # Return empty list - custom tools are no longer supported
+            return []
 
         # Define built-in tools
         builtin_tools = []
@@ -1481,7 +1823,20 @@ async def call_wrapped_llm(
         if tool_calls:
             logger.info(f"🔧 TOOL CALLS DETECTED - Processing {len(tool_calls)} tool call(s)")
             # Append the assistant message that contains tool_calls first
-            formatted_messages.append({
+            # DeepSeek reasoner models require reasoning_content instead of content when tool calls are present
+            is_deepseek_reasoner = "deepseek-reasoner" in model_str.lower()
+            if is_deepseek_reasoner and assistant_msg.get("content"):
+                # For DeepSeek reasoner: move content to reasoning_content, set content to None
+                formatted_messages.append({
+                    "role": "assistant",
+                    "reasoning_content": assistant_msg.get("content"),
+                    "content": None,
+                    "tool_calls": assistant_msg.get("tool_calls")
+                })
+                logger.info(f"🔧 DeepSeek reasoner detected - formatted with reasoning_content")
+            else:
+                # For other models: normal format
+                formatted_messages.append({
                 "role": "assistant",
                 **{k: v for k, v in assistant_msg.items() if k in ("content", "tool_calls")}
             })

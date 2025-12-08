@@ -34,6 +34,15 @@ class ProfileService {
       throw error;
     }
   }
+
+  async deleteAccount() {
+    try {
+      return await apiClient.delete('/api/auth/account');
+    } catch (error) {
+      console.error('Error deleting account:', error);
+      throw error;
+    }
+  }
 }
 
 export const profileService = new ProfileService();

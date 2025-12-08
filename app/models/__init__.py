@@ -18,8 +18,6 @@ from app.models.billing import Billing
 from app.models.audit_log import AuditLog
 from app.models.feedback import Feedback
 from app.models.uploaded_document import UploadedDocument
-from app.models.wrap_tool import WrapTool
-from app.models.wrap_credential import WrapCredential
 from app.models.oauth_app import OAuthApp
 
 __all__ = [
@@ -43,8 +41,6 @@ __all__ = [
     "AuditLog",
     "Feedback",
     "UploadedDocument",
-    "WrapTool",
-    "WrapCredential",
     "OAuthApp",
 ]
 
